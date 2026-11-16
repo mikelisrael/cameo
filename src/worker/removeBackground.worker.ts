@@ -76,10 +76,9 @@ ctx.onmessage = async (e) => {
       const n = out.width * out.height
       const alpha = new Uint8ClampedArray(n)
       for (let i = 0; i < n; i++) alpha[i] = out.data[i * out.channels + (out.channels - 1)]
-      ctx.postMessage(
-        { type: 'result', id: msg.id, mask: { width: out.width, height: out.height, data: alpha } },
-        [alpha.buffer],
-      )
+      ctx.postMessage({ type: 'result', id: msg.id, mask: { width: out.width, height: out.height, data: alpha } }, [
+        alpha.buffer,
+      ])
     } catch (err) {
       ctx.postMessage({ type: 'error', id: msg.id, message: message(err) })
     }

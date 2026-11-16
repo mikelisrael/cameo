@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Jarvis working notes, one file per task (.claude/jarvis/PROCESS.md).
+.jarvis/
+
+# Git worktrees for parallel runs (<repo>/.worktrees/<branch-slug>)
+.worktrees/

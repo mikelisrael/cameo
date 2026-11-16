@@ -18,7 +18,13 @@ export default function App() {
   const entries = useRef(new Map<string, Entry>())
 
   const fill =
-    background === 'transparent' ? undefined : background === 'custom' ? color : background === 'white' ? '#ffffff' : '#000000'
+    background === 'transparent'
+      ? undefined
+      : background === 'custom'
+        ? color
+        : background === 'white'
+          ? '#ffffff'
+          : '#000000'
 
   const patch = useCallback(
     (id: string, p: Partial<Item>) => setItems((list) => list.map((i) => (i.id === id ? { ...i, ...p } : i))),
