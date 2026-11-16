@@ -1,5 +1,6 @@
 import { pipeline, RawImage, type ProgressInfo } from '@huggingface/transformers'
-import type { Diagnostics, WorkerIn, WorkerOut } from '../lib/protocol'
+import { DEFAULT_REFINE, type Diagnostics, type Mask, type WorkerIn, type WorkerOut } from '../lib/protocol'
+import { refine } from '../lib/refine'
 
 const MODEL_ID = 'onnx-community/BiRefNet_lite-ONNX'
 /** WASM has far less memory than a GPU: BiRefNet-lite at 1024px runs out (std::bad_alloc), so the
@@ -189,15 +190,35 @@ ctx.onmessage = async (e) => {
     }
   } else if (msg.type === 'process') {
     try {
-      const { remover } = await load()
+      const { remover, diagnostics } = await load()
       const input = await toRawImage(msg.image)
       const out = await remover(input) // RGBA at original size, alpha = mask
       const n = out.width * out.height
       const alpha = new Uint8ClampedArray(n)
       for (let i = 0; i < n; i++) alpha[i] = out.data[i * out.channels + (out.channels - 1)]
-      ctx.postMessage({ type: 'result', id: msg.id, mask: { width: out.width, height: out.height, data: alpha } }, [
-        alpha.buffer,
-      ])
+
+      const opts = msg.options ?? DEFAULT_REFINE
+      let maskData: Uint8ClampedArray = alpha
+      let colors: Uint8ClampedArray | undefined
+      if (out.width === input.width && out.height === input.height && (opts.refine || opts.decontaminate)) {
+        try {
+          const refined = refine(input.data, input.channels, alpha, out.width, out.height, diagnostics.size, opts)
+          maskData = refined.mask
+          colors = refined.colors
+        } catch (err) {
+          console.warn('Refinement skipped:', message(err))
+        }
+      }
+      const width = out.width
+      const height = out.height
+      // The raw mask must not share a buffer with the refined one, or it would be transferred twice.
+      const raw: Mask | undefined = msg.compare
+        ? { width, height, data: maskData === alpha ? new Uint8ClampedArray(alpha) : alpha }
+        : undefined
+      const transfer = [maskData.buffer, colors?.buffer, raw?.data.buffer].filter(
+        (b): b is ArrayBuffer => b instanceof ArrayBuffer,
+      )
+      ctx.postMessage({ type: 'result', id: msg.id, mask: { width, height, data: maskData }, colors, raw }, transfer)
     } catch (err) {
       // The load handler reports a GPU failure once; the page resends this image to a new worker.
       if (err instanceof GpuFailed) return

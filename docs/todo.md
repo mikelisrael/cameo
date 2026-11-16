@@ -35,12 +35,13 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 
 ## Phase 1: edges as good as the best (quality)
 
-- [ ] **A benchmark set first:** ~30 photos (products on clutter, hair, fur, glass, jewellery, people at night, low light, flat lays) with a side-by-side page, so every quality change is judged on the same images, not one portrait.
-- [ ] **Full-resolution edge refinement:** a guided-filter (or fast matting) pass that uses the original photo to sharpen the upscaled mask, on the GPU via WebGPU compute or in the worker. Biggest single gain for hair.
-- [ ] **Colour decontamination:** remove the old background's colour bleeding into edge pixels (green stage light on a shoulder), so cut-outs sit cleanly on new backgrounds.
-- [ ] **Tiled high-resolution inference** for large photos on the GPU path (or BiRefNet_HR at 2048), with the 1024 pass as a guide.
-- [ ] **Model by subject:** try BiRefNet-matting (hair, fur) and BiRefNet-portrait against the benchmark set; licence check each (MIT only, no RMBG/ISNet).
-- [ ] CPU path: replace 512px BiRefNet with whatever wins on the benchmark within WASM's memory (fp16 1024, or a quantized model).
+- [x] **A benchmark page:** `?bench` shows original | model only | refined over a chosen background, with an edge zoom and sliders for the refinement. It takes Israel's own folder of photos (products on clutter, hair, fur, glass, jewellery, people at night, low light, flat lays) rather than 30 bundled stock photos: no licences to track, and his real photos are the test that matters. Still owed: collect the folder once and judge the defaults on it.
+- [x] **Full-resolution edge refinement:** fast colour guided filter (He et al.) in the worker, in plain JS (`src/lib/refine.ts`). On a synthetic hair test, edge error drops 12% (GPU 1024 mask) and 16% (CPU 512 mask). Costs about 2–3.5 s on a 12 MP photo. A luma-only guide made things worse (it can't see a red subject on a green wall); keep the colour guide.
+- [x] **Colour decontamination:** blur-fusion foreground estimation (Forte & Pitié 2021), as pymatting does it. On the synthetic test the green bleed in edge pixels goes from G 124 to 61 (true 60).
+- [ ] ~~Tiled high-resolution inference~~ Not built (2026-11-16): a salient-object model on crops loses the whole-picture context and mislabels tiles, and the full-res refinement gives the edge resolution tiling was for. BiRefNet_HR has no public ONNX. Revisit if one appears.
+- [ ] ~~Model by subject~~ Not built (2026-11-16): no BiRefNet-matting or HR in ONNX; portrait/full are 467 MB fp16 downloads (4x lite) under MIT. Revisit with the bench if a matting ONNX appears.
+- [ ] CPU path: still 512 lite (the refinement recovers much of what 512 loses). 1024 on WASM needs measuring on a real phone first.
+- [ ] Optional from review: decontaminate's pass 1 isn't downsampled for photos under 2048 px (`d = floor(long/1024)`), so it holds ~18 full-size arrays there; use `d = max(2, ceil(long/1024))` and free pass-1 temporaries.
 
 ## Phase 2: fix what the model got wrong (control)
 
