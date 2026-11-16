@@ -18,6 +18,9 @@ import { cutout, downloadName, exportPng } from './lib/compose'
 import { useRemover, type Result, type Status } from './lib/useRemover'
 import { useTheme } from './lib/useTheme'
 
+/** A 1x1 transparent GIF, shown until a HEIC photo has been decoded. */
+const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=='
+
 type Entry = { file: File; url: string; result?: Result }
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent)
@@ -37,7 +40,7 @@ const shareFiles = (() => {
 })()
 
 export default function App() {
-  const { status, progress, device, error, process } = useRemover()
+  const { status, progress, diagnostics, fellBack, error, process, retryGpu } = useRemover()
   const theme = useTheme()
   const [items, setItems] = useState<Item[]>([])
   const [selected, setSelected] = useState<string | null>(null)
@@ -59,19 +62,31 @@ export default function App() {
     (files: File[]) => {
       for (const file of files) {
         const id = crypto.randomUUID()
-        const url = URL.createObjectURL(file)
+        // HEIC can't be shown by most browsers: it gets its thumbnail once decoded.
+        const url =
+          /\.(heic|heif)$/i.test(file.name) || /^image\/hei[cf]$/.test(file.type) ? '' : URL.createObjectURL(file)
         entries.current.set(id, { file, url })
-        setItems((list) => [...list, { id, name: file.name, state: 'queued', thumb: url }])
+        setItems((list) => [...list, { id, name: file.name, state: 'queued', thumb: url || BLANK }])
         // Skipped if removed before its turn, so it doesn't hold up the images after it.
         process(
           file,
           () => patch(id, { state: 'processing' }),
           () => !entries.current.has(id),
+          (d) => {
+            const e = entries.current.get(id)
+            if (!e) return URL.revokeObjectURL(d.url)
+            if (e.url) URL.revokeObjectURL(e.url)
+            e.url = d.url
+            patch(id, { thumb: d.url, scaled: d.scaled })
+          },
         )
           .then((result) => {
             const e = entries.current.get(id)
             // Removed (or the app was reset) while it was processing: drop the result.
-            if (!e) return result.original.close()
+            if (!e) {
+              result.original.close()
+              return
+            }
             e.result = result
             patch(id, { state: 'done' })
             setSelected((s) => s ?? id)
@@ -85,7 +100,7 @@ export default function App() {
   const forget = (id: string) => {
     const e = entries.current.get(id)
     if (!e) return
-    URL.revokeObjectURL(e.url)
+    if (e.url) URL.revokeObjectURL(e.url)
     e.result?.original.close()
     entries.current.delete(id)
     revealed.current.delete(id)
@@ -114,8 +129,8 @@ export default function App() {
   const onReject = useCallback((names: string[]) => {
     setNotice(
       names.length === 1
-        ? `${names[0]} isn't a PNG, JPG or WebP image.`
-        : `${names.length} files weren't PNG, JPG or WebP images.`,
+        ? `${names[0]} isn't a photo Cutout can open.`
+        : `${names.length} files weren't photos Cutout can open.`,
     )
   }, [])
 
@@ -255,7 +270,7 @@ export default function App() {
                   or paste with <kbd>{isMac ? '⌘' : 'Ctrl'}</kbd> <kbd>V</kbd>
                 </span>
               </div>
-              <p className="empty__formats">PNG, JPG or WebP · as many as you like</p>
+              <p className="empty__formats">PNG, JPG, WebP, HEIC or AVIF · as many as you like</p>
             </div>
             <ModelLine status={status} progress={progress} error={error} />
           </div>
@@ -311,7 +326,10 @@ export default function App() {
               onCustom={setCustom}
               onDownload={save}
               size={{ width: current.result.original.width, height: current.result.original.height }}
-              device={device}
+              diagnostics={diagnostics}
+              fellBack={fellBack}
+              onRetryGpu={retryGpu}
+              scaled={selectedItem?.scaled}
               share={shareFiles}
             />
           ) : (

@@ -21,16 +21,16 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 ## Phase 0: ship it (foundation)
 
 - [x] Mobile-native basics: sticky bottom save bar on phones, share-sheet save, take-a-photo input, web app manifest + icons + iOS meta, 44px targets, safe areas, no tap flash or double-tap zoom.
-- [ ] Make `og:image` an absolute URL once the Vercel domain is known (some apps ignore a relative one).
+- [x] Make `og:image` an absolute URL once the Vercel domain is known (some apps ignore a relative one).
 
 - [x] GitHub repo (github.com/mikelisrael/cutout), open source under MIT.
-- [ ] Vercel connected to `main`.
-- [ ] Load ONNX Runtime's WASM from the CDN instead of bundling it (`env.backends.onnx.wasm.wasmPaths`), so the deploy is small.
-- [ ] Device diagnostics: a small "About this device" line or popover (GPU name, limits, which path and why, model in use), and a "Try graphics acceleration again" action that clears `cutout:force-wasm`. No image data, ever.
-- [ ] Find out why Israel's GPU failed: request the adapter's real limits when creating the WebGPU device (ONNX Runtime may be asking for defaults), and try fp32 on WebGPU before falling back to CPU.
-- [ ] HEIC/HEIF input (decode in the worker with a WASM decoder; check its licence). Also AVIF.
-- [ ] Very large images: cap the working size (e.g. 24 MP) with a clear note, so phones don't crash.
-- [ ] After a GPU fallback reload, say so ("Switched to the slower mode, add your images again") instead of an empty screen.
+- [x] Vercel connected to `main`.
+- [x] Load ONNX Runtime's WASM from the CDN instead of bundling it (`env.backends.onnx.wasm.wasmPaths`), so the deploy is small.
+- [x] Device diagnostics: a small "About this device" line or popover (GPU name, limits, which path and why, model in use), and a "Try graphics acceleration again" action that clears `cutout:force-wasm`. No image data, ever.
+- [x] (Cause: ONNX Runtime opened the device without `maxStorageBuffersPerShaderStage`, so it got WebGPU's default; we now pass our own device with the adapter's limits through the WebGPU EP option.) Find out why Israel's GPU failed: request the adapter's real limits when creating the WebGPU device (ONNX Runtime may be asking for defaults), and try fp32 on WebGPU before falling back to CPU.
+- [x] HEIC/HEIF input (decode in the worker with a WASM decoder; check its licence). Also AVIF.
+- [x] Very large images: cap the working size (e.g. 24 MP) with a clear note, so phones don't crash.
+- [x] (Done better: no reload any more; a fresh CPU worker picks up the queue.) After a GPU fallback reload, say so ("Switched to the slower mode, add your images again") instead of an empty screen.
 - [x] Brand colour (persimmon) and a neutral dark mode with a header switch, no flash on load.
 
 ## Phase 1: edges as good as the best (quality)
