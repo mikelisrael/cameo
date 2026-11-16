@@ -10,7 +10,7 @@ The user provides frontend requirements: a component, page, application, or inte
 
 ## In this repo
 
-Before designing, read `frontend_memory.md` (the core) in full, together with `docs/design/DESIGN_SYSTEM.md`. This is Cutout: a calm, warm tool people use for a minute at a time, where the photo is the hero. Where the advice below (new fonts, palettes, gradients, atmosphere) conflicts with the design system, the design system wins.
+Before designing, read `frontend_memory.md` (the core) in full, together with `docs/design/DESIGN_SYSTEM.md`. This is Cameo: a calm, warm tool people use for a minute at a time, where the photo is the hero. Where the advice below (new fonts, palettes, gradients, atmosphere) conflicts with the design system, the design system wins.
 
 ## Design Thinking
 

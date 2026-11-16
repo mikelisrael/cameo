@@ -1,4 +1,4 @@
-# Frontend memory: Israel's standing rules for Cutout
+# Frontend memory: Israel's standing rules for Cameo
 
 Every session working on the frontend as Israel reads this file in full. It is the core: the rules that apply to any frontend work here. It is carried over from the Tabs frontend memory (16 November 2026), keeping only the general preferences: how he wants things built, judged, labelled and worded, states, phones, motion, accessibility and contrast. Rules about the Tabs dashboard's tables, roles, permissions and data layer were left behind. The file stays one file until it passes about 150 lines; then it splits into `docs/frontend/<topic>.md` with an index here.
 

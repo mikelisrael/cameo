@@ -1,4 +1,4 @@
-/* Cutout: tokens and styles. The rules behind them are in docs/design/DESIGN_SYSTEM.md. */
+/* Cameo: tokens and styles. The rules behind them are in docs/design/DESIGN_SYSTEM.md. */
 
 /* Light is the default; `data-theme="dark"` on <html> is set before first paint by the script in
    index.html (saved choice, else the system's). */

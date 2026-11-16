@@ -19,7 +19,7 @@ The rules behind the questions live in `docs/design/DESIGN_SYSTEM.md` and `front
 6. Is it the right volume? Check against what `DESIGN_SYSTEM.md` says a working surface and a moment each get.
 7. Tokens only? No hex, no raw Tailwind colour, no new radius or font that the design system doesn't list.
 8. Does it reuse what exists in this repo, rather than drawing a second one of the same thing?
-9. Does the screen still read as Cutout with the wordmark covered?
+9. Does the screen still read as Cameo with the wordmark covered?
 
 ## Narrow widths
 
@@ -35,7 +35,7 @@ The rules behind the questions live in `docs/design/DESIGN_SYSTEM.md` and `front
 
 ## The empty list (Israel, 1 November 2026: a list shipped with no way to make the first record)
 
-16. Does an empty state carry the page's own add actions? When it fills the page and hides the header, every button the header has (same words) must be in it too, or the first item can't be made. For Cutout the first item is a dropped or chosen image.
+16. Does an empty state carry the page's own add actions? When it fills the page and hides the header, every button the header has (same words) must be in it too, or the first item can't be made. For Cameo the first item is a dropped or chosen image.
 17. Is its picture its own? An empty state shows the thing it keeps, never another screen's drawing.
 
 ## Proof

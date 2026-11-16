@@ -1,6 +1,6 @@
 # Jarvis
 
-Jarvis is how Israel's frontend work gets done in this repo, Cutout (an in-browser background remover): one command that takes a task from "here's what I want" to a merged branch, through research, the look, a plan, the build, a review and his click-through. It is a fork of the Tabs Jarvis (the one in the Tabs admin repo), carried over on 16 November 2026 and fitted to this project: its branches, checks and its one hard rule about images never leaving the device. You are the session that runs the process. Who does each piece of a stage (you, a scout, a worker, a verifier) is set by his global pipeline; see "Who does each stage".
+Jarvis is how Israel's frontend work gets done in this repo, Cameo (an in-browser background remover): one command that takes a task from "here's what I want" to a merged branch, through research, the look, a plan, the build, a review and his click-through. It is a fork of the Tabs Jarvis (the one in the Tabs admin repo), carried over on 16 November 2026 and fitted to this project: its branches, checks and its one hard rule about images never leaving the device. You are the session that runs the process. Who does each piece of a stage (you, a scout, a worker, a verifier) is set by his global pipeline; see "Who does each stage".
 
 The point of the process is that Israel stops having to steer. He used to say "use the design skill", "stay on brand", "write the notes", "round up" on every task. Those are now steps, and the only time he is asked to do anything is the click-through, which only he can do.
 
