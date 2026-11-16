@@ -955,12 +955,19 @@ kbd {
   color: var(--ink-2);
 }
 
+/* The panel's foot: where the photo is processed, and what this device is doing about it. */
+.panel__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
 .panel__note {
   display: flex;
   gap: 8px;
   margin: 0;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
   font-size: 13px;
   color: var(--ink-3);
 }
@@ -968,6 +975,107 @@ kbd {
 .panel__note svg {
   flex-shrink: 0;
   margin-top: 2px;
+}
+
+/* "About this device": a native disclosure, so it works by touch and keyboard with no hover. */
+.device__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  margin-left: 23px; /* lines up with the note's words, past the lock */
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--brand-text);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.device__summary::-webkit-details-marker {
+  display: none;
+}
+
+.device__summary:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.device__chevron {
+  transition: transform 180ms var(--ease);
+}
+
+.device[open] .device__chevron {
+  transform: rotate(180deg);
+}
+
+.device__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+  padding: 14px;
+  background: var(--well);
+  border-radius: var(--r-control);
+}
+
+.device__facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin: 0;
+}
+
+.device__facts dt {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.device__facts dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.device__why {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-2);
+}
+
+.device__body .button {
+  width: 100%;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+/* A line the panel says once, about this photo or this device (scaled down, switched to the processor). */
+.panel__notice {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.panel__notice svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--ink-3);
+}
+
+@media (max-width: 600px) {
+  .device__summary {
+    min-height: 44px;
+  }
+
+  .device__body .button {
+    height: 44px;
+  }
 }
 
 .swatches {

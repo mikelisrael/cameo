@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 
-export const ACCEPT = ['image/png', 'image/jpeg', 'image/webp']
+import { ACCEPT_ATTR, isAcceptedImage } from '../lib/decode'
 
 const hasFiles = (e: DragEvent) => [...e.dataTransfer.types].includes('Files')
 
@@ -17,8 +17,8 @@ export function useFileIntake(onFiles: (files: File[]) => void, onReject: (names
   const accept = useCallback(
     (list: Iterable<File>) => {
       const all = [...list]
-      const files = all.filter((f) => ACCEPT.includes(f.type))
-      const rejected = all.filter((f) => !ACCEPT.includes(f.type)).map((f) => f.name)
+      const files = all.filter(isAcceptedImage)
+      const rejected = all.filter((f) => !isAcceptedImage(f)).map((f) => f.name)
       if (files.length) onFiles(files)
       if (rejected.length) onReject(rejected)
     },
@@ -64,7 +64,7 @@ export function useFileIntake(onFiles: (files: File[]) => void, onReject: (names
   // Two hidden inputs: the file picker, and the camera (phones open it straight away).
   const picker = (
     <>
-      <input ref={input} type="file" accept={ACCEPT.join(',')} multiple hidden onChange={onChange} />
+      <input ref={input} type="file" accept={ACCEPT_ATTR} multiple hidden onChange={onChange} />
       <input ref={camera} type="file" accept="image/*" capture="environment" hidden onChange={onChange} />
     </>
   )

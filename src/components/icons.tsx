@@ -48,6 +48,19 @@ export const AlertIcon = (p: P) => (
   </svg>
 )
 
+export const InfoIcon = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v5.5M12 7.5v.01" />
+  </svg>
+)
+
+export const ChevronDownIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="m6.5 9.5 5.5 5.5 5.5-5.5" />
+  </svg>
+)
+
 export const LockIcon = (p: P) => (
   <svg {...base(p)}>
     <rect x="5" y="10.5" width="14" height="10" rx="2.5" />

@@ -6,6 +6,7 @@ export type Item = {
   state: 'queued' | 'processing' | 'done' | 'error'
   thumb: string
   error?: string
+  scaled?: { from: { width: number; height: number }; to: { width: number; height: number } }
 }
 
 type Props = {

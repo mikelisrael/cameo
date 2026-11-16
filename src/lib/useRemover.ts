@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Mask, WorkerIn, WorkerOut } from './protocol'
+import { decodeImage, type Decoded } from './decode'
+import type { Diagnostics, Mask, WorkerIn, WorkerOut } from './protocol'
 
 export type Status = 'idle' | 'loading' | 'ready' | 'processing' | 'error'
-export type Result = { original: ImageBitmap; mask: Mask }
+export type Result = { original: ImageBitmap; mask: Mask; scaled?: Decoded['scaled']; url: string }
 
 /** Set once WebGPU has failed to run the model on this browser, so later visits go straight to WASM. */
 const FORCE_WASM_KEY = 'cutout:force-wasm'
@@ -15,7 +16,22 @@ function readForceWasm() {
   }
 }
 
-type Pending = { resolve: (r: Result) => void; reject: (e: Error) => void; original: ImageBitmap }
+function setForceWasm(on: boolean) {
+  try {
+    if (on) localStorage.setItem(FORCE_WASM_KEY, '1')
+    else localStorage.removeItem(FORCE_WASM_KEY)
+  } catch {
+    // storage unavailable: the choice just isn't remembered
+  }
+}
+
+async function postCopy(worker: Worker, id: string, bitmap: ImageBitmap) {
+  const copy = await createImageBitmap(bitmap)
+  if (bitmap.width === 0) return copy.close() // the display bitmap was closed meanwhile
+  worker.postMessage({ type: 'process', id, image: copy } satisfies WorkerIn, [copy])
+}
+
+type Pending = { resolve: (r: Result) => void; reject: (e: Error) => void; decoded: Decoded }
 
 export function useRemover() {
   const workerRef = useRef<Worker | null>(null)
@@ -25,38 +41,46 @@ export function useRemover() {
   const [status, setStatus] = useState<Status>('idle')
   const [progress, setProgress] = useState(0)
   const [device, setDevice] = useState<'webgpu' | 'wasm' | null>(null)
+  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null)
+  const [fellBack, setFellBack] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const chain = useRef<Promise<unknown>>(Promise.resolve())
 
-  useEffect(() => {
+  /** Replaces the worker with a fresh one (a new ONNX Runtime) and hands it every image still waiting. */
+  const spawn = useCallback(function spawn(forceWasm: boolean, reason?: 'gpu-failed' | 'remembered') {
+    workerRef.current?.terminate()
     const worker = new Worker(new URL('../worker/removeBackground.worker.ts', import.meta.url), {
       type: 'module',
     })
     workerRef.current = worker
     const map = pending.current
+    loaded.current = false
+    setProgress(0)
+    setError(null)
     setStatus('loading')
 
     worker.onmessage = (e: MessageEvent<WorkerOut>) => {
+      if (workerRef.current !== worker) return // a worker we already replaced
       const m = e.data
       if (m.type === 'progress') {
         if (m.progress !== undefined) setProgress(Math.min(1, m.progress / 100))
       } else if (m.type === 'ready') {
         loaded.current = true
         setDevice(m.device)
+        setDiagnostics(m.diagnostics)
         setProgress(1)
         setStatus(active.current > 0 ? 'processing' : 'ready')
       } else if (m.type === 'result') {
         const p = map.get(m.id)
         map.delete(m.id)
-        p?.resolve({ original: p.original, mask: m.mask })
-      } else if (m.type === 'gpu-failed') {
-        try {
-          localStorage.setItem(FORCE_WASM_KEY, '1')
-          location.reload()
-        } catch {
-          setError("This browser's graphics acceleration can't run the model")
-          setStatus('error')
+        if (p) {
+          const { bitmap, scaled, url } = p.decoded
+          p.resolve({ original: bitmap, mask: m.mask, scaled, url })
         }
+      } else if (m.type === 'gpu-failed') {
+        setForceWasm(true)
+        setFellBack(true)
+        spawn(true, 'gpu-failed')
       } else if (m.type === 'error') {
         if (m.id) {
           const p = map.get(m.id)
@@ -68,46 +92,86 @@ export function useRemover() {
         }
       }
     }
-    worker.postMessage({ type: 'load', forceWasm: readForceWasm() } satisfies WorkerIn)
+    worker.postMessage({ type: 'load', forceWasm, reason } satisfies WorkerIn)
+    // A posted bitmap is transferred and can't be sent twice, so each re-post sends a fresh copy.
+    for (const [id, p] of map) {
+      void postCopy(worker, id, p.decoded.bitmap).catch((err: Error) => {
+        map.delete(id)
+        p.reject(err)
+      })
+    }
+  }, [])
 
+  useEffect(() => {
+    const map = pending.current
+    const remembered = readForceWasm()
+    spawn(remembered, remembered ? 'remembered' : undefined)
     return () => {
-      worker.terminate()
+      workerRef.current?.terminate()
       workerRef.current = null
       map.clear()
     }
-  }, [])
+  }, [spawn])
 
-  const run = useCallback(async (file: File, onStart?: () => void, isCancelled?: () => boolean): Promise<Result> => {
-    if (isCancelled?.()) throw new Error('Cancelled')
-    const worker = workerRef.current
-    if (!worker) throw new Error('Worker not available')
-    onStart?.()
-    const original = await createImageBitmap(file)
-    const id = crypto.randomUUID()
-    active.current++
-    setStatus(loaded.current ? 'processing' : 'loading')
-    try {
-      return await new Promise<Result>((resolve, reject) => {
-        pending.current.set(id, { resolve, reject, original })
-        // Send the File (a Blob) so the worker never takes ownership of our display bitmap.
-        worker.postMessage({ type: 'process', id, image: file } satisfies WorkerIn)
-      })
-    } finally {
-      active.current--
-      setStatus((s) => (s === 'error' ? s : active.current > 0 ? 'processing' : loaded.current ? 'ready' : 'loading'))
-    }
-  }, [])
+  /** Forget that the GPU failed and start over on it. */
+  const retryGpu = useCallback(() => {
+    setForceWasm(false)
+    setFellBack(false)
+    spawn(false)
+  }, [spawn])
+
+  const run = useCallback(
+    async (
+      file: File,
+      onStart?: () => void,
+      isCancelled?: () => boolean,
+      onDecoded?: (d: Decoded) => void,
+    ): Promise<Result> => {
+      if (isCancelled?.()) throw new Error('Cancelled')
+      if (!workerRef.current) throw new Error('Worker not available')
+      onStart?.()
+      const decoded = await decodeImage(file)
+      onDecoded?.(decoded)
+      const id = crypto.randomUUID()
+      active.current++
+      setStatus(loaded.current ? 'processing' : 'loading')
+      try {
+        return await new Promise<Result>((resolve, reject) => {
+          pending.current.set(id, { resolve, reject, decoded })
+          // The worker gets a copy, so it never decodes the file and never owns our display bitmap.
+          const worker = workerRef.current
+          if (!worker) return reject(new Error('Worker not available'))
+          postCopy(worker, id, decoded.bitmap).catch((err: Error) => {
+            pending.current.delete(id)
+            reject(err)
+          })
+        })
+      } catch (e) {
+        decoded.bitmap.close()
+        throw e
+      } finally {
+        active.current--
+        setStatus((s) => (s === 'error' ? s : active.current > 0 ? 'processing' : loaded.current ? 'ready' : 'loading'))
+      }
+    },
+    [],
+  )
 
   /** Sequential: each call waits for the previous one to finish. `isCancelled` is asked when its
    * turn comes; if it says yes, the image is skipped (rejected) without reaching the worker. */
   const process = useCallback(
-    (file: File, onStart?: () => void, isCancelled?: () => boolean): Promise<Result> => {
-      const next = chain.current.then(() => run(file, onStart, isCancelled))
+    (
+      file: File,
+      onStart?: () => void,
+      isCancelled?: () => boolean,
+      onDecoded?: (d: Decoded) => void,
+    ): Promise<Result> => {
+      const next = chain.current.then(() => run(file, onStart, isCancelled, onDecoded))
       chain.current = next.catch(() => undefined)
       return next
     },
     [run],
   )
 
-  return { status, progress, device, error, process }
+  return { status, progress, device, diagnostics, fellBack, error, process, retryGpu }
 }

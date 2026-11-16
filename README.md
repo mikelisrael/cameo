@@ -9,6 +9,8 @@
   Your photos never leave your device: no uploads, no accounts, no watermarks.
 </p>
 
+<p align="center"><a href="https://usecutout.vercel.app"><strong>Open Cutout → usecutout.vercel.app</strong></a></p>
+
 ---
 
 ## Features
@@ -31,10 +33,12 @@
 
 | Path | Model | Used when |
 |---|---|---|
-| GPU (WebGPU, fp16) | [`onnx-community/BiRefNet_lite-ONNX`](https://huggingface.co/onnx-community/BiRefNet_lite-ONNX), 1024 px | the GPU can run it (checked with a warm-up pass) |
+| GPU (WebGPU, fp16, else fp32) | [`onnx-community/BiRefNet_lite-ONNX`](https://huggingface.co/onnx-community/BiRefNet_lite-ONNX), 1024 px | the GPU can run it (checked with a warm-up pass) |
 | CPU (WebAssembly, fp32) | [`studioludens/birefnet-lite-512`](https://huggingface.co/studioludens/birefnet-lite-512), 512 px | no WebGPU, or the GPU can't run the larger model |
 
-Both models are MIT-licensed. If a GPU fails its warm-up, the browser remembers it and uses the CPU path from then on.
+Both models are MIT-licensed. Cutout opens the GPU itself with the adapter's real limits (the model needs 17 storage buffers per shader stage, more than WebGPU's default), and tries fp16, then fp32. If the GPU still fails, it switches to the CPU path without reloading, remembers that for later visits, and offers "Try the graphics card again" under **About this device**. ONNX Runtime's WebAssembly files load from jsDelivr, so the site itself stays small.
+
+Photos are decoded on the device too: PNG, JPG, WebP and AVIF by the browser, iPhone photos (HEIC/HEIF) by the browser where it can (Safari) and otherwise by [heic-to](https://github.com/hoppergee/heic-to), loaded only when one arrives. Very large photos are scaled to a working size (16.7 MP on iPhone and iPad, 24 MP elsewhere) so the device doesn't run out of memory.
 
 ## Run it locally
 
@@ -71,6 +75,7 @@ src/
   components/                     Compare slider, Queue, Toolbar, file intake, icons
   lib/useRemover.ts               talks to the worker, queues images
   lib/compose.ts                  applies the mask, exports PNG
+  lib/decode.ts                   opens photos (HEIC/AVIF too) and caps their size
   lib/useTheme.ts                 light / dark
   worker/removeBackground.worker.ts   loads the model, picks GPU or CPU, runs it
 docs/
@@ -94,6 +99,7 @@ Issues and pull requests are welcome.
 
 - [BiRefNet](https://github.com/ZhengPeng7/BiRefNet) by Zheng Peng et al. (MIT)
 - [Transformers.js](https://github.com/huggingface/transformers.js) and [ONNX Runtime Web](https://onnxruntime.ai)
+- [heic-to](https://github.com/hoppergee/heic-to) with [libheif](https://github.com/strukturag/libheif) (LGPL-3.0), loaded as a separate file only when a HEIC photo is opened
 - Fonts: [Bricolage Grotesque](https://fonts.google.com/specimen/Bricolage+Grotesque) and [Geist](https://vercel.com/font) (SIL Open Font License)
 
 ## License
