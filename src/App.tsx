@@ -45,7 +45,7 @@ export default function App() {
   const [custom, setCustom] = useState('#e0532c')
   // The selected cut-out, rendered at full size with the chosen background: shown on stage and
   // saved as is, so saving needs no async work (iOS only allows share() straight from a tap).
-  const [after, setAfter] = useState<{ id: string; url: string; blob: Blob } | null>(null)
+  const [after, setAfter] = useState<{ id: string; fill: string | null; url: string; blob: Blob } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const entries = useRef(new Map<string, Entry>())
   const revealed = useRef(new Set<string>())
@@ -139,7 +139,7 @@ export default function App() {
     cutout(r.original, r.mask, fill ?? undefined).toBlob((blob) => {
       if (cancelled || !blob) return
       url = URL.createObjectURL(blob)
-      setAfter({ id, url, blob })
+      setAfter({ id, fill, url, blob })
     }, 'image/png')
     return () => {
       cancelled = true
@@ -151,17 +151,19 @@ export default function App() {
     const e = selected ? entries.current.get(selected) : undefined
     if (!e?.result) return
     const name = downloadName(e.file.name)
-    if (shareFiles && after?.id === selected) {
+    // The pre-rendered PNG counts only once it has the background picked now (a swatch tap
+    // re-renders it, which takes a moment on a large photo).
+    const ready = after && after.id === selected && after.fill === fill ? after.blob : null
+    if (shareFiles && ready) {
       try {
-        await navigator.share({ files: [new File([after.blob], name, { type: 'image/png' })] })
+        await navigator.share({ files: [new File([ready], name, { type: 'image/png' })] })
         return
       } catch (err) {
         if ((err as Error).name === 'AbortError') return // closed the share sheet
         // Anything else (not allowed, unsupported): fall back to a download.
       }
     }
-    const blob =
-      after?.id === selected ? after.blob : await exportPng(e.result.original, e.result.mask, fill ?? undefined)
+    const blob = ready ?? (await exportPng(e.result.original, e.result.mask, fill ?? undefined))
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = name
