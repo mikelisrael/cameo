@@ -1,6 +1,6 @@
-# Cutout: project instructions
+# Cameo: project instructions
 
-Cutout is an in-browser background remover: Vite, React and TypeScript, with pnpm. The model (`onnx-community/BiRefNet_lite-ONNX`) runs through `@huggingface/transformers` in a Web Worker.
+Cameo is an in-browser background remover: Vite, React and TypeScript, with pnpm. The model (`onnx-community/BiRefNet_lite-ONNX`) runs through `@huggingface/transformers` in a Web Worker.
 It is a static site, deployed on Vercel from `main` once connected, to share with friends. Israel is the only owner. There is no backend, API, auth or database.
 
 - **Check:** `pnpm check` (typecheck, `prettier --check src`, build). Run it before calling anything done.

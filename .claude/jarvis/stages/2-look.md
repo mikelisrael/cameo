@@ -1,6 +1,6 @@
 # Stage 2: The look
 
-Decide what it looks like and how it behaves before any of it is built. Israel cares a great deal about this stage: he wants each feature to have the best look it can have, and he wants it to be unmistakably Cutout. Those two pull against each other, and holding both is the job.
+Decide what it looks like and how it behaves before any of it is built. Israel cares a great deal about this stage: he wants each feature to have the best look it can have, and he wants it to be unmistakably Cameo. Those two pull against each other, and holding both is the job.
 
 ## Load the skill, then work inside the brand
 
@@ -10,7 +10,7 @@ Until `DESIGN_SYSTEM.md` is written (today it is a stub), this stage writes it f
 
 ## Decide, in this order
 
-1. **Which volume.** Is this a brand moment (the first screen, an empty state, the model downloading) or a working surface (the comparison, the toolbar, the queue)? Posters, tilt and scenes belong to moments. Most of Cutout is a working surface: someone drops a photo to get a cutout, often several in a row.
+1. **Which volume.** Is this a brand moment (the first screen, an empty state, the model downloading) or a working surface (the comparison, the toolbar, the queue)? Posters, tilt and scenes belong to moments. Most of Cameo is a working surface: someone drops a photo to get a cutout, often several in a row.
 2. **Where the character goes.** A working surface gets one place to be interesting, and the rest stays quiet. Ask what the one real-world thing in this feature is (a cutting mat, a pair of scissors, the before and after slider), and whether drawing it that way would help someone understand it faster. If nothing earns it, a clean, well-spaced surface is the right answer, and saying so is better than decorating.
 3. **Two or three directions.** Sketch them in a sentence or two each. Pick one and write why in two lines. The directions you didn't take go in the run file in a line each, so a later "what if" doesn't restart from nothing.
 4. **Every state.** Default, hover, focus, disabled, loading, error, empty, selected, and the ones that matter here: the model downloading on first visit (with real progress), the model failed to load or the browser unsupported (no WebGPU means WASM, slower, and it says so), processing, an image that is huge, a non-image file dropped.

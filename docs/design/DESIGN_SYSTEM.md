@@ -1,6 +1,6 @@
-# Cutout design system
+# Cameo design system
 
-Cutout is a tool people open, use for thirty seconds and close. The look gets out of the way: a quiet, warm page, a white sheet that holds the photo, and one colour used sparingly. The photo is always the most colourful thing on screen.
+Cameo is a tool people open, use for thirty seconds and close. The look gets out of the way: a quiet, warm page, a white sheet that holds the photo, and one colour used sparingly. The photo is always the most colourful thing on screen.
 
 ## 1. Principles
 

@@ -129,8 +129,8 @@ export default function App() {
   const onReject = useCallback((names: string[]) => {
     setNotice(
       names.length === 1
-        ? `${names[0]} isn't a photo Cutout can open.`
-        : `${names.length} files weren't photos Cutout can open.`,
+        ? `${names[0]} isn't a photo Cameo can open.`
+        : `${names.length} files weren't photos Cameo can open.`,
     )
   }, [])
 
@@ -201,9 +201,9 @@ export default function App() {
       {intake.picker}
 
       <header className="header">
-        <a className="wordmark" href="/" aria-label="Cutout, start over">
+        <a className="wordmark" href="/" aria-label="Cameo, start over">
           <Mark />
-          Cutout
+          Cameo
         </a>
         <div className="header__actions">
           {hasItems && (
@@ -270,7 +270,10 @@ export default function App() {
                   or paste with <kbd>{isMac ? '⌘' : 'Ctrl'}</kbd> <kbd>V</kbd>
                 </span>
               </div>
-              <p className="empty__formats">PNG, JPG, WebP, HEIC or AVIF · as many as you like</p>
+              <p className="empty__formats">
+                <span className="nowrap">PNG, JPG, WebP, HEIC or AVIF</span> ·{' '}
+                <span className="nowrap">as many as you like</span>
+              </p>
             </div>
             <ModelLine status={status} progress={progress} error={error} />
           </div>
@@ -281,13 +284,13 @@ export default function App() {
         <footer className="footer">
           <span className="footer__item">
             <LockIcon width={14} height={14} />
-            Private: runs in your browser
+            Your photos stay on this device
           </span>
           <span className="footer__dot" aria-hidden="true">
             ·
           </span>
-          <a className="footer__link" href="https://github.com/mikelisrael/cutout" target="_blank" rel="noreferrer">
-            Open source on GitHub
+          <a className="footer__link" href="https://github.com/mikelisrael/cameo" target="_blank" rel="noreferrer">
+            Code on GitHub
           </a>
         </footer>
       ) : (

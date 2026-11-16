@@ -1,6 +1,6 @@
 # To do
 
-The roadmap to a state-of-the-art Cutout, written 16 November 2026 from an analysis of the first look (branch `israel/first-look`) and of what the leading tools do. Jarvis takes items top to bottom. Each phase is shippable on its own; don't start a phase before the one above it is merged and deployed.
+The roadmap to a state-of-the-art Cameo, written 16 November 2026 from an analysis of the first look (branch `israel/first-look`) and of what the leading tools do. Jarvis takes items top to bottom. Each phase is shippable on its own; don't start a phase before the one above it is merged and deployed.
 
 ## Where it stands
 
@@ -23,7 +23,7 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 - [x] Mobile-native basics: sticky bottom save bar on phones, share-sheet save, take-a-photo input, web app manifest + icons + iOS meta, 44px targets, safe areas, no tap flash or double-tap zoom.
 - [x] Make `og:image` an absolute URL once the Vercel domain is known (some apps ignore a relative one).
 
-- [x] GitHub repo (github.com/mikelisrael/cutout), open source under MIT.
+- [x] GitHub repo (github.com/mikelisrael/cameo), open source under MIT.
 - [x] Vercel connected to `main`.
 - [x] Load ONNX Runtime's WASM from the CDN instead of bundling it (`env.backends.onnx.wasm.wasmPaths`), so the deploy is small.
 - [x] Device diagnostics: a small "About this device" line or popover (GPU name, limits, which path and why, model in use), and a "Try graphics acceleration again" action that clears `cutout:force-wasm`. No image data, ever.
