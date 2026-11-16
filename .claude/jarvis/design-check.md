@@ -40,5 +40,5 @@ The rules behind the questions live in `docs/design/DESIGN_SYSTEM.md` and `front
 
 ## Proof
 
-18. Did `npm run check` pass?
+18. Did `pnpm check` pass?
 19. Was it looked at in the running app, at both widths, light and dark?

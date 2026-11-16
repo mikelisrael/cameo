@@ -45,7 +45,7 @@ Most of what Israel asks is small. Sending "switch these two buttons" through se
 
 If a tweak turns out to be bigger once you're in it, resize it, log why, and go to the stage it now needs.
 
-**The design skill comes first, whatever the size** (Israel, 21 October 2026: "always remember not to ignore it jarvis … at the fore front of implementation"). A tweak or a fix skips The look as a stage, but anything it changes that Israel will see is still designed: load the `frontend-design` skill and read the sections of `docs/design/DESIGN_SYSTEM.md` it touches (its checklist section at least) before the first line of code, and run `npm run check` before the round up. So does every run in a batch. And every round up starts with the design check (`.claude/jarvis/design-check.md`, Israel 21 October 2026): its questions asked of the screenshots, and anything that fails retouched before the commit.
+**The design skill comes first, whatever the size** (Israel, 21 October 2026: "always remember not to ignore it jarvis … at the fore front of implementation"). A tweak or a fix skips The look as a stage, but anything it changes that Israel will see is still designed: load the `frontend-design` skill and read the sections of `docs/design/DESIGN_SYSTEM.md` it touches (its checklist section at least) before the first line of code, and run `pnpm check` before the round up. So does every run in a batch. And every round up starts with the design check (`.claude/jarvis/design-check.md`, Israel 21 October 2026): its questions asked of the screenshots, and anything that fails retouched before the commit.
 
 ## The stages
 
@@ -81,7 +81,7 @@ His global `~/.claude/CLAUDE.md` ("Pipeline") staffs the stages; this table is w
 | 2 The look | Needs craft (a new screen, a new visual pattern or motion, or he asked for it to look good): `🎨 Worker · opus medium` takes it whole. Routine UI: you set the direction in the brief, naming the exemplar and the tokens. | Needs craft: you write the look yourself. Routine UI: as on Sonnet. |
 | 3 Plan | You, with the global gate 3 run on the open questions; the advisor when a trigger fires. | You; gate 3 is n/a. |
 | 4 Build | Within ~2 files and ~50 lines: you. Larger: the `🔧 Worker` ladder, one surface per brief, each brief opening with its `Gate 3:` and `Rung:` lines. Plumbing first, the look on top. | Workers do every edit, except a crafted look, which is yours. |
-| 5 Review | `🔎 Verifier`, foreground, on the rung the plan set. It runs the scoped checks. You run `npm run check` once on the final code, and the screenshots and design check stay yours. | Same. |
+| 5 Review | `🔎 Verifier`, foreground, on the rung the plan set. It runs the scoped checks. You run `pnpm check` once on the final code, and the screenshots and design check stay yours. | Same. |
 | A fix whose cause no one can find | `🩺 Analyst · opus high`, which changes nothing and reports the cause. | Same. |
 | 6 Gate, 7 Round up | You. | You. |
 
@@ -99,7 +99,7 @@ Three kinds of switch, each handled the same way every time.
 **Between tasks**, when he interrupts ("switch"), stacks something on top, or brings something more urgent than the run in hand (see "Working through the list"). First park the run in hand: wait for any agent you're waiting on to finish (never leave a worker mid-edit), then write into its run file the stage, the next step in one line, and the files changed and not yet committed. Then:
 
 - **Stacked, or small work for the batch:** same branch, a new run file, as in "Working through the list".
-- **Unrelated work while the parked run has uncommitted changes:** don't stash and don't mix the two. Start the new run in a worktree at `.worktrees/israel-<slug>`, on `israel/<slug>` off `main` (his global worktree rule), with its own `npm install`, and write the path in the new run file. Going back is reading the parked run file and working in the main tree again. Remove the worktree when its branch merges.
+- **Unrelated work while the parked run has uncommitted changes:** don't stash and don't mix the two. Start the new run in a worktree at `.worktrees/israel-<slug>`, on `israel/<slug>` off `main` (his global worktree rule), with its own `pnpm install`, and write the path in the new run file. Going back is reading the parked run file and working in the main tree again. Remove the worktree when its branch merges.
 - **A large task:** still alone; see "Batching, clearing and tokens".
 
 **Between sessions.** On Opus or Fable the global rule is one task per session. When a run closes there, don't start the next one in the same thread: close the run file as "Between runs" says and tell him "Run closed: <name>. Start a fresh session; `jarvis` picks up from `.jarvis/`." A batch of tweaks and small fixes counts as one task. On Sonnet, carry on through the list.

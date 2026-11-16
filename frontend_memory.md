@@ -15,13 +15,17 @@ When a new practice or convention is set, write it down in the same session, wit
 - **Images never leave the device:** no uploads, and no analytics that send image data. The model's files are the only download.
 - **Brand:** `docs/design/DESIGN_SYSTEM.md`. Use its tokens only, with no new colours or fonts. Until it is written, the look stage writes it first.
 - **No secrets:** don't read `.env` files. `.env.example` is fine.
-- **Checks before calling work done:** `npm run check` (typecheck, `prettier --check src`, build). Gate on the exit code, not on reading the output. Check the type check's own exit code (found 13 October 2026): `npm run typecheck | tail` prints `tail`'s exit, which is always 0; run it bare and read `$?`. Keep each file's existing line endings.
+- **Checks before calling work done:** `pnpm check` (typecheck, `prettier --check src`, build). Gate on the exit code, not on reading the output. Check the type check's own exit code (found 13 October 2026): `pnpm typecheck | tail` prints `tail`'s exit, which is always 0; run it bare and read `$?`. Keep each file's existing line endings.
 - **Always make the best decision** (Israel, 10 October 2026): fix a problem at its cause, in the shared piece, not around it on one screen; a change that reaches more screens is a reason to check more, not to choose less.
 - **A click-through row says where to go** (Israel, 26 October 2026): the Where column is the way there from the first screen, with buttons as labelled on screen.
 - **Before every round up, the design check** (`.claude/jarvis/design-check.md`), asked of the screenshots; a "no" is retouched then, not left.
 - **No reminders:** Israel should never have to point out a missing house convention. Check the patterns before building, not after.
 - **Design requests:** when Israel asks for a "modern look", aim for restraint. "Don't do too much" means refine spacing, hierarchy and states, not add decoration.
 - **Inside the app, go easy** (Israel, 1 October 2026, on a home screen). Colour is an accent on a quiet page: a white sheet on paper, with one colour on a mark, a dot or a chip. Don't repeat one idea everywhere. Stay close to a layout people already like, and keep an animation that's already there unless asked to replace it.
+
+- **Colour, and a dark mode done properly** (Israel, 16 November 2026: "we need colour" and "a perfect dark mode", after disliking the first dark mode and then its brownish tint). Persimmon is the brand colour on the main actions. Dark is neutral charcoal with no brown cast. A visible light/dark switch sits in the header; the theme is set before paint so it never flashes. Check every change in both themes.
+- **Quiet facts go to the footer** (Israel, 16 November 2026, of the privacy line in the header: "should be at the bottom center"). The header holds the brand and actions only.
+- **Mobile-native first** (Israel, 16 November 2026: "make sure it is mobile native"). Design and check every screen at 390px before desktop: main actions in a thumb-reach bottom bar on phones, 44px touch targets, nothing that only appears on hover, safe-area insets, the share sheet for saving on phones, the camera as an input, installable to the home screen.
 
 ## Layout and words
 
