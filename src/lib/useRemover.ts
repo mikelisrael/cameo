@@ -4,6 +4,17 @@ import type { Mask, WorkerIn, WorkerOut } from './protocol'
 export type Status = 'idle' | 'loading' | 'ready' | 'processing' | 'error'
 export type Result = { original: ImageBitmap; mask: Mask }
 
+/** Set once WebGPU has failed to run the model on this browser, so later visits go straight to WASM. */
+const FORCE_WASM_KEY = 'cutout:force-wasm'
+
+function readForceWasm() {
+  try {
+    return localStorage.getItem(FORCE_WASM_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 type Pending = { resolve: (r: Result) => void; reject: (e: Error) => void; original: ImageBitmap }
 
 export function useRemover() {
@@ -38,6 +49,14 @@ export function useRemover() {
         const p = map.get(m.id)
         map.delete(m.id)
         p?.resolve({ original: p.original, mask: m.mask })
+      } else if (m.type === 'gpu-failed') {
+        try {
+          localStorage.setItem(FORCE_WASM_KEY, '1')
+          location.reload()
+        } catch {
+          setError("This browser's graphics acceleration can't run the model")
+          setStatus('error')
+        }
       } else if (m.type === 'error') {
         if (m.id) {
           const p = map.get(m.id)
@@ -49,7 +68,7 @@ export function useRemover() {
         }
       }
     }
-    worker.postMessage({ type: 'load' } satisfies WorkerIn)
+    worker.postMessage({ type: 'load', forceWasm: readForceWasm() } satisfies WorkerIn)
 
     return () => {
       worker.terminate()
@@ -58,7 +77,8 @@ export function useRemover() {
     }
   }, [])
 
-  const run = useCallback(async (file: File, onStart?: () => void): Promise<Result> => {
+  const run = useCallback(async (file: File, onStart?: () => void, isCancelled?: () => boolean): Promise<Result> => {
+    if (isCancelled?.()) throw new Error('Cancelled')
     const worker = workerRef.current
     if (!worker) throw new Error('Worker not available')
     onStart?.()
@@ -78,10 +98,11 @@ export function useRemover() {
     }
   }, [])
 
-  /** Sequential: each call waits for the previous one to finish. */
+  /** Sequential: each call waits for the previous one to finish. `isCancelled` is asked when its
+   * turn comes; if it says yes, the image is skipped (rejected) without reaching the worker. */
   const process = useCallback(
-    (file: File, onStart?: () => void): Promise<Result> => {
-      const next = chain.current.then(() => run(file, onStart))
+    (file: File, onStart?: () => void, isCancelled?: () => boolean): Promise<Result> => {
+      const next = chain.current.then(() => run(file, onStart, isCancelled))
       chain.current = next.catch(() => undefined)
       return next
     },

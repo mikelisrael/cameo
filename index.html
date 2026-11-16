@@ -3,7 +3,52 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="description"
+      content="Remove the background from any photo, right in your browser. Nothing is uploaded."
+    />
+    <meta name="theme-color" content="#faf6f1" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Theme before first paint, so dark mode never flashes light: saved choice, else the system's.
+      ;(function () {
+        try {
+          var t = localStorage.getItem('cutout:theme')
+          if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+          document.documentElement.dataset.theme = t
+          if (t === 'dark') document.querySelector('meta[name="theme-color"]').content = '#111113'
+        } catch (e) {}
+      })()
+    </script>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Cutout" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Cutout: remove backgrounds in your browser" />
+    <meta
+      property="og:description"
+      content="Free, open-source background remover. Runs on your device, so nothing is uploaded."
+    />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Cutout: remove backgrounds in your browser" />
+    <meta
+      name="twitter:description"
+      content="Free, open-source background remover. Runs on your device, so nothing is uploaded."
+    />
+    <meta name="twitter:image" content="/og.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600&family=Geist+Mono:wght@400;500&family=Geist:wght@400;500;600&display=swap"
+    />
     <title>Cutout</title>
   </head>
   <body>

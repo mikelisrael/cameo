@@ -1,9 +1,9 @@
 # Cutout: project instructions
 
-Cutout is an in-browser background remover: Vite, React and TypeScript, with npm. The model (`onnx-community/BiRefNet_lite-ONNX`) runs through `@huggingface/transformers` in a Web Worker.
+Cutout is an in-browser background remover: Vite, React and TypeScript, with pnpm. The model (`onnx-community/BiRefNet_lite-ONNX`) runs through `@huggingface/transformers` in a Web Worker.
 It is a static site, deployed on Vercel from `main` once connected, to share with friends. Israel is the only owner. There is no backend, API, auth or database.
 
-- **Check:** `npm run check` (typecheck, `prettier --check src`, build). Run it before calling anything done.
+- **Check:** `pnpm check` (typecheck, `prettier --check src`, build). Run it before calling anything done.
 - **Privacy:** images never leave the device. No uploads, and no analytics that send image data.
 - **No AI attribution** anywhere: commits, PRs, docs, comments.
 - **Frontend work goes through `/jarvis`** (`.claude/jarvis/PROCESS.md`). Read `frontend_memory.md` first, in full.

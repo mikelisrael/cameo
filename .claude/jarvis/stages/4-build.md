@@ -7,7 +7,7 @@ Write it, following the plan in order. Who writes it (you or a worker, and on wh
 - **Match the file.** Its comment density, naming and idiom, and its line endings (keep whichever a file has). Comments here say why something is the way it is, in plain words, and name Israel's decisions with their date.
 - **Reuse before writing.** If you're about to write something that feels like it should already exist, search for it first, in `src/components` and `src/lib`.
 - **Stay inside the rule.** Nothing that sends an image, or anything made from one, off the device. A dependency that phones home is a network call too.
-- **Type-check as you go,** not only at the end: `npm run typecheck`.
+- **Type-check as you go,** not only at the end: `pnpm typecheck`.
 - **Scripts with quotes in them go in files.** Inline shell scripts containing apostrophes or backticks break in this shell. Write the script to the scratchpad with the Write tool and run it from there.
 
 ## When the plan is wrong

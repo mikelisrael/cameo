@@ -17,7 +17,7 @@ All of it: `git diff main...` plus what's uncommitted. Look for:
 
 Every time:
 
-- `npm run check` (typecheck, `prettier --check src` and build). Gate on its exit code, not on reading its output. Run `npm run typecheck; echo $?` on its own if you need the type check's exit code: piping it through `tail` hides it.
+- `pnpm check` (typecheck, `prettier --check src` and build). Gate on its exit code, not on reading its output. Run `pnpm typecheck; echo $?` on its own if you need the type check's exit code: piping it through `tail` hides it.
 
 If something here has a test, run it too; there is no test suite or e2e suite yet.
 
@@ -25,7 +25,7 @@ If something here has a test, run it too; there is no test suite or e2e suite ye
 
 Checks don't see a cramped row or a name that wraps. For anything with new UI, render it and look:
 
-- `npm run dev -- --port 3013` on a port of its own, so Israel's running one isn't disturbed. Screenshots with headless Edge, or Playwright if it is installed (don't add it as a dependency).
+- `pnpm dev --port 3013` on a port of its own, so Israel's running one isn't disturbed. Screenshots with headless Edge, or Playwright if it is installed (don't add it as a dependency).
 - One desktop width and 390px, light and dark split between them.
 - Real-looking content, including the awkward cases: a long file name, many files at once, a huge image, a non-image file dropped, the model still downloading, a failed load.
 - Read each screenshot and ask what Israel would say about it. Spacing, truncation, alignment, a block of colour that's too loud, a label that wraps.

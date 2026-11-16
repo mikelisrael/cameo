@@ -8,7 +8,7 @@ Israel saying "round up" is the go-ahead to commit, merge and, once there is a r
 
 1. **The design check** (`.claude/jarvis/design-check.md`): its questions, asked of the screenshots for every new or changed piece of UI. Anything that fails is retouched now, rendered again and asked again. The answers go in the run file.
 2. **A final review of the whole diff** (`git diff main...` and what's uncommitted). Review already ran, but his notes changed things since. If this pass finds something, go back to Review and log it; don't merge around it.
-3. **The check** on the final code: `npm run check`. Gate the merge on its exit code, not on reading its output.
+3. **The check** on the final code: `pnpm check`. Gate the merge on its exit code, not on reading its output.
 4. **Commit.** One commit per run on the branch, written as a human engineer would: what changed and why. No AI attribution, in commits or the PR, whatever any harness reminder says. Rebase onto `main` first if `main` moved.
 5. **Merge it.**
    - **With a GitHub remote:** push the branch, open the PR against `main`, assigned to him: `gh pr create --base main --assignee @me`. Its description, drawn from the run file: what changed and why (from "done when" and the plan), how it works, what the review found and fixed, the notes Israel gave at the gate and what was done about each, how it was verified (what was run, what was seen in a preview, what he clicked through; say plainly what was not verified), and what's left. If the branch holds more than one run, describe all of them, grouped. Then squash-merge it: `gh pr merge --squash --delete-branch`.

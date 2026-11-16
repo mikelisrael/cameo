@@ -2,6 +2,9 @@ import { pipeline, RawImage, type ProgressInfo } from '@huggingface/transformers
 import type { WorkerIn, WorkerOut } from '../lib/protocol'
 
 const MODEL_ID = 'onnx-community/BiRefNet_lite-ONNX'
+/** WASM has far less memory than a GPU: BiRefNet-lite at 1024px runs out (std::bad_alloc), so the
+ * CPU path uses the same model trained at 512px. MIT licensed, like the GPU one. */
+const WASM_MODEL_ID = 'studioludens/birefnet-lite-512'
 
 const ctx = self as unknown as {
   postMessage(message: WorkerOut, transfer?: Transferable[]): void
@@ -18,21 +21,8 @@ function onProgress(info: ProgressInfo) {
   }
 }
 
-async function build() {
-  const hasWebGPU = typeof navigator !== 'undefined' && 'gpu' in navigator
-  if (hasWebGPU) {
-    try {
-      const remover = await pipeline('background-removal', MODEL_ID, {
-        device: 'webgpu',
-        dtype: 'fp16',
-        progress_callback: onProgress,
-      })
-      return { remover: remover as unknown as Remover, device: 'webgpu' as const }
-    } catch (err) {
-      console.warn('WebGPU load failed, falling back to WASM', err)
-    }
-  }
-  const remover = await pipeline('background-removal', MODEL_ID, {
+async function buildWasm() {
+  const remover = await pipeline('background-removal', WASM_MODEL_ID, {
     device: 'wasm',
     dtype: 'fp32',
     progress_callback: onProgress,
@@ -40,9 +30,44 @@ async function build() {
   return { remover: remover as unknown as Remover, device: 'wasm' as const }
 }
 
+class GpuFailed extends Error {}
+
+/** BiRefNet's WebGPU shaders need more than 16 storage buffers per stage (measured: 17). */
+async function gpuCanRunModel() {
+  const gpu = (navigator as unknown as { gpu?: { requestAdapter(): Promise<GpuAdapter | null> } }).gpu
+  if (!gpu) return false
+  try {
+    const adapter = await gpu.requestAdapter()
+    return !!adapter && adapter.limits.maxStorageBuffersPerShaderStage > 16
+  } catch {
+    return false
+  }
+}
+type GpuAdapter = { limits: { maxStorageBuffersPerShaderStage: number } }
+
+async function build(forceWasm: boolean) {
+  if (forceWasm || !(await gpuCanRunModel())) return buildWasm()
+  const remover = (await pipeline('background-removal', MODEL_ID, {
+    device: 'webgpu',
+    dtype: 'fp16',
+    progress_callback: onProgress,
+  })) as unknown as Remover
+  // A GPU can pass the limits check and still fail to run the model. A tiny warm-up run finds out
+  // now (and compiles the shaders for the first real image).
+  try {
+    await remover(new RawImage(new Uint8ClampedArray(64 * 64 * 3).fill(128), 64, 64, 3))
+  } catch (err) {
+    console.warn('WebGPU could not run the model', err)
+    throw new GpuFailed(message(err))
+  }
+  return { remover, device: 'webgpu' as const }
+}
+
+let forceWasm = false
+
 function load() {
   if (!loading) {
-    loading = build().catch((err) => {
+    loading = build(forceWasm).catch((err) => {
       loading = null
       throw err
     })
@@ -62,11 +87,12 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
 ctx.onmessage = async (e) => {
   const msg = e.data
   if (msg.type === 'load') {
+    forceWasm = !!msg.forceWasm
     try {
       const { device } = await load()
       ctx.postMessage({ type: 'ready', device })
     } catch (err) {
-      ctx.postMessage({ type: 'error', message: message(err) })
+      ctx.postMessage(err instanceof GpuFailed ? { type: 'gpu-failed' } : { type: 'error', message: message(err) })
     }
   } else if (msg.type === 'process') {
     try {
