@@ -151,7 +151,7 @@ export default function App() {
     if (!id || !r) return
     let url: string | null = null
     let cancelled = false
-    cutout(r.original, r.mask, fill ?? undefined).toBlob((blob) => {
+    cutout(r.original, r.mask, fill ?? undefined, r.colors).toBlob((blob) => {
       if (cancelled || !blob) return
       url = URL.createObjectURL(blob)
       setAfter({ id, fill, url, blob })
@@ -178,7 +178,7 @@ export default function App() {
         // Anything else (not allowed, unsupported): fall back to a download.
       }
     }
-    const blob = ready ?? (await exportPng(e.result.original, e.result.mask, fill ?? undefined))
+    const blob = ready ?? (await exportPng(e.result.original, e.result.mask, fill ?? undefined, e.result.colors))
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = name

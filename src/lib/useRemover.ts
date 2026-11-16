@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { decodeImage, type Decoded } from './decode'
-import type { Diagnostics, Mask, WorkerIn, WorkerOut } from './protocol'
+import type { Diagnostics, Mask, RefineOptions, WorkerIn, WorkerOut } from './protocol'
 
 export type Status = 'idle' | 'loading' | 'ready' | 'processing' | 'error'
-export type Result = { original: ImageBitmap; mask: Mask; scaled?: Decoded['scaled']; url: string }
+export type Result = {
+  original: ImageBitmap
+  mask: Mask
+  colors?: Uint8ClampedArray
+  raw?: Mask
+  scaled?: Decoded['scaled']
+  url: string
+}
+
+export type ProcessOpts = { options?: RefineOptions; compare?: boolean }
 
 /** Set once WebGPU has failed to run the model on this browser, so later visits go straight to WASM. */
 const FORCE_WASM_KEY = 'cutout:force-wasm'
@@ -25,13 +34,16 @@ function setForceWasm(on: boolean) {
   }
 }
 
-async function postCopy(worker: Worker, id: string, bitmap: ImageBitmap) {
+async function postCopy(worker: Worker, id: string, bitmap: ImageBitmap, opts?: ProcessOpts) {
   const copy = await createImageBitmap(bitmap)
   if (bitmap.width === 0) return copy.close() // the display bitmap was closed meanwhile
-  worker.postMessage({ type: 'process', id, image: copy } satisfies WorkerIn, [copy])
+  worker.postMessage(
+    { type: 'process', id, image: copy, options: opts?.options, compare: opts?.compare } satisfies WorkerIn,
+    [copy],
+  )
 }
 
-type Pending = { resolve: (r: Result) => void; reject: (e: Error) => void; decoded: Decoded }
+type Pending = { resolve: (r: Result) => void; reject: (e: Error) => void; decoded: Decoded; opts?: ProcessOpts }
 
 export function useRemover() {
   const workerRef = useRef<Worker | null>(null)
@@ -75,7 +87,7 @@ export function useRemover() {
         map.delete(m.id)
         if (p) {
           const { bitmap, scaled, url } = p.decoded
-          p.resolve({ original: bitmap, mask: m.mask, scaled, url })
+          p.resolve({ original: bitmap, mask: m.mask, colors: m.colors, raw: m.raw, scaled, url })
         }
       } else if (m.type === 'gpu-failed') {
         setForceWasm(true)
@@ -95,7 +107,7 @@ export function useRemover() {
     worker.postMessage({ type: 'load', forceWasm, reason } satisfies WorkerIn)
     // A posted bitmap is transferred and can't be sent twice, so each re-post sends a fresh copy.
     for (const [id, p] of map) {
-      void postCopy(worker, id, p.decoded.bitmap).catch((err: Error) => {
+      void postCopy(worker, id, p.decoded.bitmap, p.opts).catch((err: Error) => {
         map.delete(id)
         p.reject(err)
       })
@@ -126,6 +138,7 @@ export function useRemover() {
       onStart?: () => void,
       isCancelled?: () => boolean,
       onDecoded?: (d: Decoded) => void,
+      opts?: ProcessOpts,
     ): Promise<Result> => {
       if (isCancelled?.()) throw new Error('Cancelled')
       if (!workerRef.current) throw new Error('Worker not available')
@@ -137,11 +150,11 @@ export function useRemover() {
       setStatus(loaded.current ? 'processing' : 'loading')
       try {
         return await new Promise<Result>((resolve, reject) => {
-          pending.current.set(id, { resolve, reject, decoded })
+          pending.current.set(id, { resolve, reject, decoded, opts })
           // The worker gets a copy, so it never decodes the file and never owns our display bitmap.
           const worker = workerRef.current
           if (!worker) return reject(new Error('Worker not available'))
-          postCopy(worker, id, decoded.bitmap).catch((err: Error) => {
+          postCopy(worker, id, decoded.bitmap, opts).catch((err: Error) => {
             pending.current.delete(id)
             reject(err)
           })
@@ -165,8 +178,9 @@ export function useRemover() {
       onStart?: () => void,
       isCancelled?: () => boolean,
       onDecoded?: (d: Decoded) => void,
+      opts?: ProcessOpts,
     ): Promise<Result> => {
-      const next = chain.current.then(() => run(file, onStart, isCancelled, onDecoded))
+      const next = chain.current.then(() => run(file, onStart, isCancelled, onDecoded, opts))
       chain.current = next.catch(() => undefined)
       return next
     },
