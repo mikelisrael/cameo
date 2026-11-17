@@ -59,6 +59,7 @@ export default function HowItWorks({ hasItems, onClose, onChoose }: Props) {
           <div>
             <h3 className="how-facts__head">Kept on this device</h3>
             <ul className="how-facts__list">
+              <li>Cameo itself, so it opens without a connection once it has been set up.</li>
               <li>
                 The models Cameo runs, each downloaded the first time it's needed so it opens quickly after that.
                 Clearing this site's data in your browser removes them.
