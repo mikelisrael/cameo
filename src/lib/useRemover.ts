@@ -65,6 +65,7 @@ export function useRemover() {
   const [device, setDevice] = useState<'webgpu' | 'wasm' | null>(null)
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null)
   const [timings, setTimings] = useState<Timings | null>(null)
+  const [startupMs, setStartupMs] = useState<number | null>(null) // page open to first ready; kept across workers
   const [fellBack, setFellBack] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const chain = useRef<Promise<unknown>>(Promise.resolve())
@@ -159,6 +160,7 @@ export function useRemover() {
         setRetrying(null)
         setDevice(m.device)
         setDiagnostics(m.diagnostics)
+        setStartupMs((ms) => ms ?? Math.round(performance.now()))
         setProgress(1)
         setStatus(active.current > 0 ? 'processing' : 'ready')
       } else if (m.type === 'result') {
@@ -325,6 +327,7 @@ export function useRemover() {
     device,
     diagnostics,
     timings,
+    startupMs,
     draftMs,
     fellBack,
     error,

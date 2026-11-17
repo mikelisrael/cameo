@@ -1,4 +1,5 @@
-import { AutoProcessor, RawImage, SamModel, Tensor, type ProgressInfo } from '@huggingface/transformers'
+import { AutoProcessor, RawImage, SamModel, Tensor } from '@huggingface/transformers'
+import { makeDownloadProgress } from '../lib/downloadProgress'
 import type { Seg, SegIn, SegOut } from '../lib/protocol'
 import { refineAlpha } from '../lib/refine'
 
@@ -27,14 +28,11 @@ let loading: Promise<Loaded> | null = null
 const cache = new Map<string, Entry>()
 let queue: Promise<unknown> = Promise.resolve()
 
-function onProgress(info: ProgressInfo) {
-  // Aggregate progress across both model files.
-  if (info.status === 'progress_total') ctx.postMessage({ type: 'progress', progress: info.progress })
-}
-
 function load(): Promise<Loaded> {
   if (!loading) {
     const p = (async () => {
+      // One tracker for both files, so the bar counts the model and the processor together.
+      const onProgress = makeDownloadProgress((progress) => ctx.postMessage({ type: 'progress', progress }))
       const [model, processor] = await Promise.all([
         SamModel.from_pretrained(MODEL_ID, { device: 'wasm', dtype: 'q8', progress_callback: onProgress }),
         AutoProcessor.from_pretrained(MODEL_ID, { progress_callback: onProgress }),

@@ -1,4 +1,4 @@
-import type { MaskPatch } from './brush'
+import type { MaskPatch } from './maskPatch'
 
 export type Step =
   | { kind: 'mask'; patch: MaskPatch }

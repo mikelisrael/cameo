@@ -1,4 +1,5 @@
-import { env, pipeline, RawImage, type ProgressInfo, type Tensor } from '@huggingface/transformers'
+import { env, pipeline, RawImage, type Tensor } from '@huggingface/transformers'
+import { makeDownloadProgress } from '../lib/downloadProgress'
 import {
   DEFAULT_REFINE,
   type Diagnostics,
@@ -33,19 +34,16 @@ type Remover = ((image: RawImage) => Promise<RawImage>) & {
 type Loaded = { remover: Remover; diagnostics: Diagnostics }
 let loading: Promise<Loaded> | null = null
 
-function onProgress(info: ProgressInfo) {
-  // Aggregate progress across all model files.
-  if (info.status === 'progress_total') {
-    ctx.postMessage({ type: 'progress', loaded: info.loaded, total: info.total, progress: info.progress })
-  }
-}
+/** A fresh tracker per load: every attempt and retry downloads (or reads the cache) from the start. */
+const newTracker = () => makeDownloadProgress((progress) => ctx.postMessage({ type: 'progress', progress }))
 
 async function buildWasm() {
   const remover = await pipeline('background-removal', WASM_MODEL_ID, {
     device: 'wasm',
     dtype: 'fp32',
-    progress_callback: onProgress,
+    progress_callback: newTracker(),
   })
+  ctx.postMessage({ type: 'progress', progress: 100 }) // the files are in: the UI moves on to "Starting up"
   return { remover: remover as unknown as Remover, threads: wasmThreads() }
 }
 
@@ -162,8 +160,9 @@ async function build(forceWasm: boolean, reason: 'gpu-failed' | 'remembered'): P
         device: 'webgpu',
         dtype,
         session_options: { executionProviders: [{ name: 'webgpu', device: device as unknown as GPUDevice }] },
-        progress_callback: onProgress,
+        progress_callback: newTracker(),
       })) as unknown as Remover
+      ctx.postMessage({ type: 'progress', progress: 100 })
       // A GPU can pass the limits check and still fail to run the model. A tiny warm-up run finds out
       // now (and compiles the shaders for the first real image).
       await remover(new RawImage(new Uint8ClampedArray(64 * 64 * 3).fill(128), 64, 64, 3))

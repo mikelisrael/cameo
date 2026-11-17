@@ -89,7 +89,7 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 - [x] Keyboard shortcuts (paste, download, next/previous image, brush keys) with a cheat sheet.
 - [x] Accessibility audit (screen reader pass through the whole flow, focus order, reduced motion). Done 2026-11-17: one polite announcer, named slider and canvas, workspace h1, axe clean in both themes. The Edit brush stays pointer-only (freehand painting).
 - [x] (Done: `pnpm e2e`, CI on every PR, #25.) Playwright e2e for the core flow (drop → cut-out → background → download) running on the CPU path, so CI needs no GPU.
-- [ ] Performance budget: first screen under 100 KB of JS, model download progress honest, warm start under 3 s.
+- [x] (Done 2026-11-17: first screen 90.6 kB gzip, guarded by `scripts/check-budget.mjs` in `pnpm check`; the Editor loads on demand, prefetched after the first cut-out; the download bar weighs only model weights and never moves back; "Start-up" counts from opening the page.) Performance budget: first screen under 100 KB of JS, model download progress honest, warm start under 3 s.
 - [ ] Counting usage without images (page views and "cut-out made" counts only), if Israel wants numbers; check it against the privacy rule first.
 
 ## Phase 5: beyond the others (state of the art)
