@@ -8,7 +8,7 @@ import {
   isImage,
   type GradientName,
 } from '../lib/background'
-import type { Format, Frame } from '../lib/compose'
+import type { Format, Frame, Shadow } from '../lib/compose'
 import type { Diagnostics } from '../lib/protocol'
 import type { Item } from './Queue'
 import { CheckIcon, ChevronDownIcon, PlusIcon, DownloadIcon, InfoIcon, LockIcon, ShareIcon, Spinner } from './icons'
@@ -22,6 +22,12 @@ const SIZES: { value: Frame; label: string }[] = [
   { value: 'square', label: '1:1' },
   { value: 'portrait', label: '4:5' },
   { value: 'story', label: '9:16' },
+]
+
+const SHADOWS: { value: Shadow['kind']; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'contact', label: 'Contact' },
+  { value: 'drop', label: 'Drop' },
 ]
 
 const FRAME_NOTE: Record<Frame, string> = {
@@ -63,6 +69,8 @@ type Props = {
   onDownload: () => void
   frame: Frame
   onFrame: (frame: Frame) => void
+  shadow: Shadow
+  onShadow: (shadow: Shadow) => void
   /** Object URL of the framed image when it is ready; null while it renders. */
   preview: string | null
   /** Pixel size of what will be downloaded; null while a framed size is still rendering. */
@@ -97,6 +105,8 @@ export function Toolbar({
   onDownload,
   frame,
   onFrame,
+  shadow,
+  onShadow,
   preview,
   outSize,
   diagnostics,
@@ -270,6 +280,46 @@ export function Toolbar({
         {frame !== 'photo' && (
           <div className="panel__preview">
             {preview ? <img src={preview} alt="What you'll download" draggable={false} /> : <Spinner />}
+          </div>
+        )}
+        <h2 className="panel__title" id="shadow-label">
+          Shadow
+        </h2>
+        <Segmented
+          className="seg seg--block"
+          label="Shadow"
+          options={SHADOWS}
+          value={shadow.kind}
+          onChange={(kind) => onShadow({ ...shadow, kind })}
+        />
+        {shadow.kind !== 'none' && (
+          <div className="panel__sliders">
+            <label className="editbar__slider">
+              <span>Strength</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={Math.round(shadow.strength * 100)}
+                onChange={(e) => onShadow({ ...shadow, strength: Number(e.target.value) / 100 })}
+              />
+              <output className="editbar__val">{Math.round(shadow.strength * 100)} %</output>
+            </label>
+            {shadow.kind === 'drop' && (
+              <label className="editbar__slider">
+                <span>Angle</span>
+                <input
+                  type="range"
+                  min={-90}
+                  max={90}
+                  step={5}
+                  value={shadow.angle}
+                  onChange={(e) => onShadow({ ...shadow, angle: Number(e.target.value) })}
+                />
+                <output className="editbar__val">{shadow.angle}°</output>
+              </label>
+            )}
           </div>
         )}
         {/* On phones this becomes a bar pinned to the bottom of the screen, in thumb reach. */}
