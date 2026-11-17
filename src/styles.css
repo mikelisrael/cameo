@@ -1139,8 +1139,9 @@ kbd {
 
 .swatches {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 8px;
+  /* Twelve swatches: two rows of six, at 288px and at 390px. */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px 8px;
 }
 
 .swatch {
@@ -1205,6 +1206,16 @@ kbd {
 
 .swatch--custom {
   background: conic-gradient(from 90deg, #ff6b6b, #ffd93d, #6bcb77, #4d96ff, #b06bff, #ff6b6b);
+}
+
+.swatch--image {
+  background-color: var(--well);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.swatch__glyph {
+  color: var(--ink-3);
+  pointer-events: none;
 }
 
 .swatch__tick {

@@ -1,7 +1,17 @@
+import {
+  BLUR,
+  GRADIENTS,
+  cssBackground,
+  gradientFill,
+  gradientOf,
+  isColor,
+  isImage,
+  type GradientName,
+} from '../lib/background'
 import type { Format, Frame } from '../lib/compose'
 import type { Diagnostics } from '../lib/protocol'
 import type { Item } from './Queue'
-import { CheckIcon, ChevronDownIcon, DownloadIcon, InfoIcon, LockIcon, ShareIcon, Spinner } from './icons'
+import { CheckIcon, ChevronDownIcon, PlusIcon, DownloadIcon, InfoIcon, LockIcon, ShareIcon, Spinner } from './icons'
 import { Segmented } from './Segmented'
 
 const LABEL: Record<Format, string> = { png: 'PNG', webp: 'WebP', jpg: 'JPG' }
@@ -32,8 +42,21 @@ const PRESETS: { label: string; value: string | null }[] = [
   { label: 'Blush', value: '#f5d6cb' },
 ]
 
+/** Photo-based and gradient backgrounds, drawn from the lib so the swatch matches the result. */
+const SCENES: { label: string; value: string }[] = [
+  { label: 'Blurred photo', value: BLUR },
+  ...(Object.keys(GRADIENTS) as GradientName[]).map((n) => ({ label: GRADIENTS[n].label, value: gradientFill(n) })),
+]
+
 type Props = {
   fill: string | null
+  /** Object URL of the selected photo's blurred copy, and of each picked picture by fill id. */
+  blurUrl: string | null
+  imageUrls: Map<string, string>
+  /** The picture picked most recently (its fill id), if any. */
+  lastImage: string | null
+  /** Opens the file picker for a background picture. */
+  onPickImage: () => void
   custom: string
   onFill: (fill: string | null) => void
   onCustom: (hex: string) => void
@@ -64,6 +87,10 @@ type Props = {
 
 export function Toolbar({
   fill,
+  blurUrl,
+  imageUrls,
+  lastImage,
+  onPickImage,
   custom,
   onFill,
   onCustom,
@@ -84,8 +111,28 @@ export function Toolbar({
   onDownloadAll,
   zipping,
 }: Props) {
-  const isPreset = PRESETS.some((p) => p.value === fill)
+  // Anything that isn't a hex colour outside the presets is a preset-like choice, not the custom colour.
+  const isPreset = PRESETS.some((p) => p.value === fill) || (!!fill && !isColor(fill)) || fill === null
+  const shownImage = fill && isImage(fill) ? fill : lastImage
+  const imageUrl = shownImage ? imageUrls.get(shownImage) : undefined
+  const imageOn = isImage(fill)
   const formats = (['png', ...(webp ? ['webp'] : []), 'jpg'] as Format[]).map((f) => ({ value: f, label: LABEL[f] }))
+  const activateImage = () => {
+    if (!imageOn && lastImage) onFill(lastImage)
+    else onPickImage()
+  }
+  const gradient = gradientOf(fill ?? '')
+  const backgroundNote = !fill
+    ? format === 'jpg'
+      ? 'White background'
+      : 'Transparent background'
+    : fill === BLUR
+      ? 'Blurred photo behind'
+      : isImage(fill)
+        ? 'Your image behind'
+        : gradient
+          ? `${gradient.label} gradient`
+          : 'Solid background'
   return (
     <aside className="panel">
       <div className="panel__group">
@@ -114,6 +161,57 @@ export function Toolbar({
               </label>
             )
           })}
+          {SCENES.map((p) => {
+            const on = fill === p.value
+            return (
+              <label key={p.label} className="swatch" style={cssBackground(p.value, { blurUrl })}>
+                <input
+                  type="radio"
+                  name="background"
+                  className="swatch__radio"
+                  checked={on}
+                  aria-label={p.label}
+                  onChange={() => onFill(p.value)}
+                />
+                {on && <CheckIcon className="swatch__tick" data-dark={isDark(p.value) || undefined} />}
+              </label>
+            )
+          })}
+          {/* Image: picks a picture; tapping it again while selected replaces the picture. */}
+          <label
+            className="swatch swatch--image"
+            style={imageUrl ? cssBackground(shownImage, { imageUrls }) : undefined}
+          >
+            <input
+              type="radio"
+              name="background"
+              className="swatch__radio"
+              checked={imageOn}
+              aria-label="Your image"
+              onChange={() => {}}
+              onKeyDown={(e) => {
+                // Remember a key pressed on this radio itself; arrowing onto it presses nothing here.
+                e.currentTarget.dataset.key = e.key
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  activateImage()
+                }
+              }}
+              onBlur={(e) => delete e.currentTarget.dataset.key}
+              onClick={(e) => {
+                const key = e.currentTarget.dataset.key
+                delete e.currentTarget.dataset.key
+                // Pointer clicks have detail > 0; a keyboard click only counts when Space was pressed here.
+                // The click the browser fires when arrows land on this radio does nothing.
+                if (e.detail > 0 || key === ' ') activateImage()
+              }}
+            />
+            {imageOn ? (
+              <CheckIcon className="swatch__tick" data-dark />
+            ) : (
+              !imageUrl && <PlusIcon className="swatch__glyph" width={14} height={14} />
+            )}
+          </label>
           {/* Custom: a radio (keyboard picks it with the arrows) under a colour input that pointers hit. */}
           <div className="swatch swatch--custom" style={!isPreset && fill ? { background: fill } : undefined}>
             <input
@@ -196,9 +294,7 @@ export function Toolbar({
           </button>
         )}
         {/* The size sits under Size, so this line keeps only the background wording. */}
-        <p className="panel__meta">
-          {fill ? 'Solid background' : format === 'jpg' ? 'White background' : 'Transparent background'}
-        </p>
+        <p className="panel__meta">{backgroundNote}</p>
         {scaled && (
           <p className="panel__notice">
             <InfoIcon width={15} height={15} />
@@ -294,8 +390,13 @@ function DeviceDetails({ d, onRetryGpu }: { d: Diagnostics; onRetryGpu: () => vo
   )
 }
 
-function isDark(hex: string | null) {
-  if (!hex) return false
+function isDark(value: string | null) {
+  if (!value) return false
+  // A photo (blurred or picked) can be any tone: the light tick reads on most.
+  if (value === BLUR || isImage(value)) return true
+  const grad = gradientOf(value)
+  const hex = grad ? grad.to : value
+  if (!isColor(hex)) return false
   const n = parseInt(hex.slice(1), 16)
   const r = (n >> 16) & 255
   const g = (n >> 8) & 255

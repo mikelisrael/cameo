@@ -16,8 +16,10 @@ import {
 } from './components/icons'
 import { Queue, type Item } from './components/Queue'
 import { Toolbar } from './components/Toolbar'
+import { paintBackground } from './lib/background'
 import { applyPatch, applyPick, type MaskPatch } from './lib/brush'
 import { downloadName, exportImage, frameSize, supportsWebp, zipCutouts, type Format, type Frame } from './lib/compose'
+import { decodeImage } from './lib/decode'
 import { isDirty, newHistory, push, redo, undo, type History } from './lib/history'
 import type { Mask } from './lib/protocol'
 import { useHowItWorks } from './lib/useHowItWorks'
@@ -121,6 +123,17 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null)
   const entries = useRef(new Map<string, Entry>())
   const revealed = useRef(new Set<string>())
+  // Pictures picked as backgrounds, by fill id ('image:<n>'). They live until Start over, because
+  // undo can step back to an older one; nothing is stored beyond this session.
+  const images = useRef(new Map<string, ImageBitmap>())
+  const imageUrlRef = useRef(new Map<string, string>())
+  const imageSeq = useRef(0)
+  const [imageUrls, setImageUrls] = useState(() => new Map<string, string>())
+  const [lastImage, setLastImage] = useState<string | null>(null)
+  const imageInput = useRef<HTMLInputElement>(null)
+  // Small blurred copy of each photo for the Blur background, made once per photo.
+  const blurUrls = useRef(new Map<string, string>())
+  const [blur, setBlur] = useState<{ id: string; url: string } | null>(null)
 
   const patch = useCallback(
     (id: string, p: Partial<Item>) => setItems((list) => list.map((i) => (i.id === id ? { ...i, ...p } : i))),
@@ -173,6 +186,9 @@ export default function App() {
     e.result?.original.close()
     entries.current.delete(id)
     revealed.current.delete(id)
+    const blurUrl = blurUrls.current.get(id)
+    if (blurUrl) URL.revokeObjectURL(blurUrl)
+    blurUrls.current.delete(id)
     segRef.current.drop(id)
   }
 
@@ -188,15 +204,39 @@ export default function App() {
     if (next !== selected) setSelected(next)
   }, [items, selected])
 
+  const clearImages = useCallback(() => {
+    for (const b of images.current.values()) b.close()
+    for (const u of imageUrlRef.current.values()) URL.revokeObjectURL(u)
+    images.current.clear()
+    imageUrlRef.current.clear()
+    setImageUrls(new Map())
+    setLastImage(null)
+  }, [])
+
+  // Leaving the page frees the picked pictures and the blurred copies.
+  useEffect(
+    () => () => {
+      for (const b of images.current.values()) b.close()
+      for (const u of imageUrlRef.current.values()) URL.revokeObjectURL(u)
+      for (const u of blurUrls.current.values()) URL.revokeObjectURL(u)
+      images.current.clear()
+      imageUrlRef.current.clear()
+      blurUrls.current.clear()
+    },
+    [],
+  )
+
   const startOver = useCallback(() => {
     for (const id of [...entries.current.keys()]) forget(id)
+    clearImages()
+    setBlur(null)
     setItems([])
     setSelected(null)
     setAfter(null)
     setFramed(null)
     setFill(null)
     setView('compare')
-  }, [])
+  }, [clearImages])
 
   const onReject = useCallback((names: string[]) => {
     setNotice(
@@ -243,7 +283,7 @@ export default function App() {
     if (view === 'edit') return
     let cancelled = false
     const version = editVersion
-    exportImage(r.original, e.edited ?? r.mask, fill ?? undefined, r.colors, format)
+    exportImage(r.original, e.edited ?? r.mask, fill ?? undefined, r.colors, format, 'photo', images.current)
       .then((blob) => {
         // A superseded run never makes a URL, so there is nothing to revoke for it.
         if (cancelled) return
@@ -277,7 +317,7 @@ export default function App() {
     let cancelled = false
     const version = editVersion
     const mask = e.edited ?? r.mask
-    exportImage(r.original, mask, fill ?? undefined, r.colors, format, frame)
+    exportImage(r.original, mask, fill ?? undefined, r.colors, format, frame, images.current)
       .then((blob) => {
         if (cancelled) return
         const { width, height } = frameSize(frame, r.original, mask)
@@ -295,6 +335,38 @@ export default function App() {
     },
     [framed],
   )
+
+  // The Blur background's preview: the photo at a few dozen pixels, scaled up to ~640 px and kept as a JPEG.
+  useEffect(() => {
+    const id = selected
+    const r = id ? entries.current.get(id)?.result : undefined
+    if (!id || !r) return
+    if (blurUrls.current.has(id)) {
+      setBlur({ id, url: blurUrls.current.get(id)! })
+      return
+    }
+    let cancelled = false
+    const k = 640 / Math.max(r.original.width, r.original.height)
+    const c = document.createElement('canvas')
+    c.width = Math.max(1, Math.round(r.original.width * k))
+    c.height = Math.max(1, Math.round(r.original.height * k))
+    paintBackground(c.getContext('2d')!, 'blur', c.width, c.height, { original: r.original })
+    c.toBlob(
+      (b) => {
+        c.width = c.height = 0
+        if (!b || cancelled || !entries.current.has(id)) return
+        const url = URL.createObjectURL(b)
+        blurUrls.current.set(id, url)
+        setBlur({ id, url })
+      },
+      'image/jpeg',
+      0.85,
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [selected, selectedDone])
+  const blurUrl = blur && blur.id === selected ? blur.url : null
 
   // WebP is offered only where the browser really encodes it.
   useEffect(() => {
@@ -345,6 +417,7 @@ export default function App() {
         e.result.colors,
         format,
         frame,
+        images.current,
       ))
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
@@ -371,6 +444,7 @@ export default function App() {
           e.result.colors,
           format,
           frame,
+          images.current,
         )
         files.push({ name: downloadName(e.file.name, format), blob })
       }
@@ -495,6 +569,25 @@ export default function App() {
       fromPicker.current = false
     })
     setCustom(hex)
+  }, [])
+
+  const changeFillRef = useRef(changeFill)
+  changeFillRef.current = changeFill
+
+  // Opens a picture from the files as a background; HEIC works and a huge one is shrunk, as for photos.
+  const pickImage = useCallback(async (file: File | undefined) => {
+    if (!file) return
+    try {
+      const d = await decodeImage(file)
+      const id = `image:${++imageSeq.current}`
+      images.current.set(id, d.bitmap)
+      imageUrlRef.current.set(id, d.url)
+      setImageUrls(new Map(imageUrlRef.current))
+      setLastImage(id)
+      changeFillRef.current(id)
+    } catch {
+      setNotice(`${file.name} isn't a picture Cameo can open.`)
+    }
   }, [])
 
   const resetEdits = useCallback(() => {
@@ -624,6 +717,17 @@ export default function App() {
   return (
     <div className="app" {...(hasItems && !how.isOpen ? intake.dragProps : {})}>
       {intake.picker}
+      <input
+        ref={imageInput}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = '' // so picking the same file again still fires
+          void pickImage(file)
+        }}
+      />
 
       <header className="header">
         <a className="wordmark" href="/" aria-label="Cameo, start over">
@@ -792,6 +896,8 @@ export default function App() {
                     mask={current.edited}
                     colors={current.result.colors}
                     fill={fill}
+                    blurUrl={blurUrl}
+                    imageUrls={imageUrls}
                     tool={tool}
                     brush={brush}
                     showOriginal={showOriginal}
@@ -829,6 +935,10 @@ export default function App() {
             {current?.result ? (
               <Toolbar
                 fill={fill}
+                blurUrl={blurUrl}
+                imageUrls={imageUrls}
+                lastImage={lastImage}
+                onPickImage={() => imageInput.current?.click()}
                 custom={custom}
                 onFill={changeFill}
                 onCustom={changeCustom}

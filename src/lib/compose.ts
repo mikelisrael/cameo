@@ -1,3 +1,4 @@
+import { paintBackground } from './background'
 import type { Mask } from './protocol'
 
 /** Draws the original and applies the mask as alpha, at the original resolution. */
@@ -6,6 +7,7 @@ export function cutout(
   mask: Mask,
   fill?: string,
   colors?: Uint8ClampedArray,
+  images?: Map<string, ImageBitmap>,
 ): HTMLCanvasElement {
   const w = original.width
   const h = original.height
@@ -57,8 +59,7 @@ export function cutout(
   out.width = w
   out.height = h
   const o = out.getContext('2d')!
-  o.fillStyle = fill
-  o.fillRect(0, 0, w, h)
+  paintBackground(o, fill, w, h, { original, images })
   o.drawImage(subject, 0, 0)
   subject.width = subject.height = 0
   return out
@@ -171,7 +172,7 @@ export function frameSize(frame: Frame, original: ImageBitmap, mask: Mask): { wi
   return { width: l.outW, height: l.outH }
 }
 
-/** Image blob in the chosen format: transparent background (PNG, WebP), or a solid hex fill. */
+/** Image blob in the chosen format: transparent background (PNG, WebP), or a colour, gradient, blur or picture behind it. */
 export function exportImage(
   original: ImageBitmap,
   mask: Mask,
@@ -179,12 +180,13 @@ export function exportImage(
   colors: Uint8ClampedArray | undefined,
   format: Format,
   frame: Frame = 'photo',
+  images?: Map<string, ImageBitmap>,
 ): Promise<Blob> {
   // JPG has no transparency: without a picked background it gets white rather than black.
   const background = fill ?? (format === 'jpg' ? '#ffffff' : undefined)
   let canvas: HTMLCanvasElement
   if (frame === 'photo') {
-    canvas = cutout(original, mask, background, colors)
+    canvas = cutout(original, mask, background, colors, images)
   } else {
     const l = layout(frame, photoBox(mask, original.width, original.height), original.width, original.height)
     const subject = cutout(original, mask, undefined, colors)
@@ -193,8 +195,7 @@ export function exportImage(
     canvas.height = l.outH
     const c = canvas.getContext('2d')!
     if (background) {
-      c.fillStyle = background
-      c.fillRect(0, 0, l.outW, l.outH)
+      paintBackground(c, background, l.outW, l.outH, { original, images })
     }
     c.imageSmoothingQuality = 'high'
     c.drawImage(subject, l.sx, l.sy, l.sw, l.sh, l.dx, l.dy, l.dw, l.dh)
