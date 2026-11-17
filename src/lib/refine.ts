@@ -254,21 +254,18 @@ export function refineAlpha(
 }
 
 /**
- * Removes the old background's colour from edge pixels, returning RGBA (A = 255) with the same colours inside and
- * outside the cut-out. Blur-fusion foreground estimation (Forte & Pitié, "Approximate Fast Foreground Colour
- * Estimation", 2021): a wide pass at reduced resolution, then a tight pass at full resolution, one channel at a time
- * to keep memory low. Pixels with alpha 0 or 255 are copied untouched.
+ * The wide pass of blur fusion, at 1/d resolution. A separate function so its temporaries (sub-sampled image, alpha and
+ * blur buffers) are unreachable by the time the full-resolution pass allocates; only what that pass reads is returned.
  */
-export function decontaminate(
+function blurFusionCoarse(
   image: Pixels,
   channels: number,
   alpha: Uint8ClampedArray,
   w: number,
   h: number,
-): Uint8ClampedArray {
-  const longSide = Math.max(w, h)
-  const scale = Math.max(1, longSide / 1024)
-  const d = Math.max(1, Math.floor(longSide / 1024))
+  d: number,
+  scale: number,
+) {
   const ws = Math.ceil(w / d)
   const hs = Math.ceil(h / d)
   const n = ws * hs
@@ -379,6 +376,29 @@ export function decontaminate(
       F1[i * 3 + 2] = Math.round((v < 0 ? 0 : v > 1 ? 1 : v) * 255)
     }
   }
+  return { F1, bB1, ax, ay, ws }
+}
+
+/**
+ * Removes the old background's colour from edge pixels, returning RGBA (A = 255) with the same colours inside and
+ * outside the cut-out. Blur-fusion foreground estimation (Forte & Pitié, "Approximate Fast Foreground Colour
+ * Estimation", 2021): a wide pass at reduced resolution, then a tight pass at full resolution, one channel at a time
+ * to keep memory low. Pixels with alpha 0 or 255 are copied untouched.
+ */
+export function decontaminate(
+  image: Pixels,
+  channels: number,
+  alpha: Uint8ClampedArray,
+  w: number,
+  h: number,
+): Uint8ClampedArray {
+  const longSide = Math.max(w, h)
+  const scale = Math.max(1, longSide / 1024)
+  // At least 2: the wide pass is low-frequency, so halving it costs nothing visible, and below 2048 px it would
+  // otherwise run (and allocate ~13 buffers) at full resolution, which phones cannot always afford.
+  const d = Math.max(2, Math.ceil(longSide / 1024))
+  const { F1, bB1, ax, ay, ws } = blurFusionCoarse(image, channels, alpha, w, h, d, scale)
+  const { i0: xi0, i1: xi1, f: xf } = ax
 
   // Pass 2 at full resolution.
   const R2 = Math.max(1, Math.round(6 * scale))
