@@ -27,3 +27,17 @@ export type WorkerOut =
 
 export type RefineOptions = { refine: boolean; decontaminate: boolean; eps: number; radius: number }
 export const DEFAULT_REFINE: RefineOptions = { refine: true, decontaminate: true, eps: 2e-3, radius: 2 }
+
+export type Seg = { x: number; y: number; w: number; h: number; alpha: Uint8ClampedArray } // rect in mask px; alpha is w*h, 0..255
+export type SegIn =
+  | { type: 'load' }
+  | { type: 'embed'; id: string; image: ImageBitmap }
+  | { type: 'decode'; id: string; req: number; x: number; y: number; width: number; height: number } // point in mask px; width/height = mask size
+  | { type: 'drop'; id: string }
+export type SegOut =
+  | { type: 'progress'; progress: number } // 0..100, whole download
+  | { type: 'ready' }
+  | { type: 'embedded'; id: string }
+  | { type: 'dropped'; id: string } // the worker evicted this image's embedding to stay within its cache
+  | { type: 'decoded'; id: string; req: number; seg: Seg | null }
+  | { type: 'error'; id?: string; req?: number; message: string }

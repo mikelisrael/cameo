@@ -1,8 +1,10 @@
-import { useRef, type KeyboardEvent, type ReactNode } from 'react'
+import { useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
+import type { SegState } from '../lib/useSegmenter'
 import type { BrushSettings, Tool } from './Editor'
-import { BrushIcon, EraserIcon, HandIcon, RedoIcon, UndoIcon } from './icons'
+import { BrushIcon, EraserIcon, HandIcon, RedoIcon, TapIcon, UndoIcon } from './icons'
 
 type View = 'compare' | 'edit'
+type Pick = 'keep' | 'remove'
 
 type Props = {
   view: View
@@ -11,6 +13,11 @@ type Props = {
   onTool: (tool: Tool) => void
   brush: BrushSettings
   onBrush: (brush: BrushSettings) => void
+  pick: Pick
+  onPick: (pick: Pick) => void
+  segState: SegState
+  segProgress: number
+  onSegRetry: () => void
   canUndo: boolean
   canRedo: boolean
   onUndo: () => void
@@ -26,8 +33,14 @@ const VIEWS: { value: View; label: string }[] = [
 
 const TOOLS: { value: Tool; label: string; icon: ReactNode }[] = [
   { value: 'move', label: 'Move', icon: <HandIcon /> },
+  { value: 'select', label: 'Select', icon: <TapIcon /> },
   { value: 'erase', label: 'Erase', icon: <EraserIcon /> },
   { value: 'restore', label: 'Restore', icon: <BrushIcon /> },
+]
+
+const PICKS: { value: Pick; label: string }[] = [
+  { value: 'keep', label: 'Keep' },
+  { value: 'remove', label: 'Remove' },
 ]
 
 /** A radiogroup of buttons: one Tab stop (the checked one), arrow keys move the choice. */
@@ -56,7 +69,23 @@ function Segmented<T extends string>({
     group.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[options.indexOf(next)]?.focus()
   }
   return (
-    <div ref={group} className={className} role="radiogroup" aria-label={label} onKeyDown={onKeyDown}>
+    <div
+      ref={group}
+      className={className}
+      role="radiogroup"
+      aria-label={label}
+      onKeyDown={onKeyDown}
+      // the sliding marker's width and place come from the options themselves, for any count
+      style={
+        {
+          '--n': options.length,
+          '--at': Math.max(
+            0,
+            options.findIndex((o) => o.value === value),
+          ),
+        } as CSSProperties
+      }
+    >
       {options.map((o) => (
         <button
           key={o.value}
@@ -82,6 +111,11 @@ export function EditBar({
   onTool,
   brush,
   onBrush,
+  pick,
+  onPick,
+  segState,
+  segProgress,
+  onSegRetry,
   canUndo,
   canRedo,
   onUndo,
@@ -128,42 +162,72 @@ export function EditBar({
       {edit && (
         <div className="editbar__row editbar__row--tools">
           <Segmented className="seg seg--tools" label="Tool" options={TOOLS} value={tool} onChange={onTool} />
-          <label className="switch" data-disabled={moving || undefined}>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={brush.smart}
-              disabled={moving}
-              onChange={(e) => onBrush({ ...brush, smart: e.target.checked })}
-            />
-            <span className="switch__track" aria-hidden="true" />
-            Smart edges
-          </label>
-          <label className="editbar__slider">
-            <span>Size</span>
-            <input
-              type="range"
-              min={4}
-              max={200}
-              step={1}
-              value={brush.size}
-              disabled={moving}
-              onChange={(e) => onBrush({ ...brush, size: Number(e.target.value) })}
-            />
-            <output className="editbar__val">{brush.size}</output>
-          </label>
-          <label className="editbar__slider">
-            <span>Softness</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={Math.round(brush.softness * 100)}
-              disabled={moving}
-              onChange={(e) => onBrush({ ...brush, softness: Number(e.target.value) / 100 })}
-            />
-            <output className="editbar__val">{Math.round(brush.softness * 100)}%</output>
-          </label>
+          {tool === 'select' ? (
+            <>
+              <Segmented className="seg seg--pick" label="Select mode" options={PICKS} value={pick} onChange={onPick} />
+              <p className="editbar__note" data-state={segState} aria-live="polite">
+                {segState === 'downloading' ? (
+                  <>
+                    Getting Select ready… <span className="mono">{Math.round(segProgress * 100)}%</span>
+                  </>
+                ) : segState === 'ready' ? (
+                  pick === 'keep' ? (
+                    'Tap a part of the photo to keep it.'
+                  ) : (
+                    'Tap something to remove it.'
+                  )
+                ) : segState === 'error' ? (
+                  <>
+                    Select couldn't start.{' '}
+                    <button type="button" className="button button--quiet button--sm" onClick={onSegRetry}>
+                      Try again
+                    </button>
+                  </>
+                ) : (
+                  'Reading the photo…'
+                )}
+              </p>
+            </>
+          ) : (
+            <>
+              <label className="switch" data-disabled={moving || undefined}>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={brush.smart}
+                  disabled={moving}
+                  onChange={(e) => onBrush({ ...brush, smart: e.target.checked })}
+                />
+                <span className="switch__track" aria-hidden="true" />
+                Smart edges
+              </label>
+              <label className="editbar__slider">
+                <span>Size</span>
+                <input
+                  type="range"
+                  min={4}
+                  max={200}
+                  step={1}
+                  value={brush.size}
+                  disabled={moving}
+                  onChange={(e) => onBrush({ ...brush, size: Number(e.target.value) })}
+                />
+                <output className="editbar__val">{brush.size}</output>
+              </label>
+              <label className="editbar__slider">
+                <span>Softness</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={Math.round(brush.softness * 100)}
+                  disabled={moving}
+                  onChange={(e) => onBrush({ ...brush, softness: Number(e.target.value) / 100 })}
+                />
+                <output className="editbar__val">{Math.round(brush.softness * 100)}%</output>
+              </label>
+            </>
+          )}
         </div>
       )}
     </div>

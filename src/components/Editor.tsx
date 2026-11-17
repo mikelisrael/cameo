@@ -13,7 +13,7 @@ import {
 import { Stroke, type MaskPatch, type Rect } from '../lib/brush'
 import type { Mask } from '../lib/protocol'
 
-export type Tool = 'move' | 'erase' | 'restore'
+export type Tool = 'move' | 'select' | 'erase' | 'restore'
 export type BrushSettings = { size: number; softness: number; smart: boolean }
 export type EditorHandle = { zoomIn(): void; zoomOut(): void; fit(): void }
 
@@ -28,6 +28,8 @@ type Props = {
   onShowOriginal: (show: boolean) => void
   version: number
   onStroke: (patch: MaskPatch) => void
+  onTap?: (p: { x: number; y: number }) => void
+  pending?: { x: number; y: number } | null
   ref?: Ref<EditorHandle>
 }
 
@@ -82,9 +84,15 @@ export function Editor({
   onShowOriginal,
   version,
   onStroke,
+  onTap,
+  pending,
   ref,
 }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null)
+  const tapElRef = useRef<HTMLSpanElement>(null)
+  const pendingRef = useRef(pending)
+  pendingRef.current = pending
+  const tapStart = useRef<{ id: number; x: number; y: number; ok: boolean } | null>(null)
   const bgRef = useRef<HTMLDivElement>(null)
   const worldRef = useRef<HTMLDivElement>(null)
   const ghostRef = useRef<HTMLCanvasElement>(null)
@@ -123,6 +131,12 @@ export function Editor({
     const { mw, mh, ow } = geo.current
     const world = worldRef.current
     const bg = bgRef.current
+    const tapEl = tapElRef.current
+    const tapAt = pendingRef.current
+    if (tapEl && tapAt) {
+      tapEl.style.left = `${x + tapAt.x * s}px`
+      tapEl.style.top = `${y + tapAt.y * s}px`
+    }
     if (world) {
       world.style.transform = `translate(${x}px, ${y}px) scale(${s})`
       world.classList.toggle('editor__world--pixels', s > 2)
@@ -183,6 +197,11 @@ export function Editor({
     }),
     [zoomAt, fit],
   )
+
+  // Place the pending-tap marker when it appears or moves.
+  useLayoutEffect(() => {
+    applyView()
+  }, [pending, applyView])
 
   // Measure the viewport; fit again on resize unless the user has moved the view since the last fit.
   useLayoutEffect(() => {
@@ -316,10 +335,23 @@ export function Editor({
     if (!ring || !vp) return
     const h = hover.current
     const m = mode.current
-    const show = tool !== 'move' && m !== 'pan' && m !== 'pinch' && (h.type === 'touch' ? m === 'paint' : h.inside)
+    const show =
+      tool !== 'move' &&
+      tool !== 'select' &&
+      m !== 'pan' &&
+      m !== 'pinch' &&
+      (h.type === 'touch' ? m === 'paint' : h.inside)
     ring.style.display = show ? 'block' : 'none'
     if (show) ring.style.transform = `translate(${h.x - brush.size / 2}px, ${h.y - brush.size / 2}px)`
-    vp.style.cursor = show ? 'none' : tool === 'move' ? (m === 'pan' ? 'grabbing' : 'grab') : ''
+    vp.style.cursor = show
+      ? 'none'
+      : tool === 'move' || tool === 'select'
+        ? m === 'pan'
+          ? 'grabbing'
+          : tool === 'select'
+            ? 'crosshair'
+            : 'grab'
+        : ''
   }
 
   useEffect(() => {
@@ -366,12 +398,15 @@ export function Editor({
 
     if (pointers.current.size === 2) {
       cancelStroke()
+      if (tapStart.current) tapStart.current.ok = false
       mode.current = 'pinch'
       pinch.current = pair()
       touched.current = true
-    } else if (e.button === 1 || tool === 'move') {
+    } else if (e.button === 1 || tool === 'move' || tool === 'select') {
       mode.current = 'pan'
       touched.current = true
+      tapStart.current =
+        tool === 'select' && isPrimary ? { id: e.pointerId, x: e.clientX, y: e.clientY, ok: true } : null
     } else {
       const { x, y } = toMask(e.clientX, e.clientY)
       const radius = Math.max(0.5, brush.size / 2 / view.current.s)
@@ -389,6 +424,8 @@ export function Editor({
     const prev = pointers.current.get(e.pointerId)
     if (prev) {
       pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      const ts = tapStart.current
+      if (ts && ts.id === e.pointerId && Math.hypot(e.clientX - ts.x, e.clientY - ts.y) >= 6) ts.ok = false
       if (mode.current === 'pan') {
         const v = view.current
         v.x += e.clientX - prev.x
@@ -420,6 +457,16 @@ export function Editor({
   const endPointer = (e: ReactPointerEvent<HTMLDivElement>, cancelled: boolean) => {
     if (!pointers.current.delete(e.pointerId)) return
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
+    const ts = tapStart.current
+    if (ts && ts.id === e.pointerId) {
+      tapStart.current = null
+      if (!cancelled && ts.ok && mode.current === 'pan' && onTap) {
+        const p = toMask(e.clientX, e.clientY)
+        if (p.x >= 0 && p.y >= 0 && p.x < mask.width && p.y < mask.height) {
+          onTap({ x: Math.min(mask.width - 1, Math.floor(p.x)), y: Math.min(mask.height - 1, Math.floor(p.y)) })
+        }
+      }
+    }
     if (e.pointerId === paintId.current && stroke.current) {
       const s = stroke.current
       stroke.current = null
@@ -447,7 +494,7 @@ export function Editor({
     onShowOriginal(true)
   }
 
-  const ghostOpacity = showOriginal ? 1 : tool === 'move' ? 0 : 0.28
+  const ghostOpacity = showOriginal ? 1 : tool === 'move' || tool === 'select' ? 0 : 0.28
   const bgStyle: CSSProperties = fill ? { backgroundColor: fill, backgroundImage: 'none' } : {}
 
   return (
@@ -467,7 +514,7 @@ export function Editor({
         syncRing()
       }}
       onDoubleClick={() => {
-        if (tool === 'move') fit()
+        if (tool === 'move' || tool === 'select') fit()
       }}
     >
       <div ref={bgRef} className="editor__bg" style={bgStyle} />
@@ -475,6 +522,7 @@ export function Editor({
         <canvas ref={ghostRef} className="editor__ghost" style={{ opacity: ghostOpacity }} />
         <canvas ref={cutRef} className="editor__cut" style={{ visibility: showOriginal ? 'hidden' : 'visible' }} />
       </div>
+      {pending && <span ref={tapElRef} className="editor__tap" aria-hidden />}
       <div ref={ringRef} className="editor__cursor" style={{ width: brush.size, height: brush.size }} />
 
       <div className="editor__zoom" onPointerDown={stop} onDoubleClick={stop}>

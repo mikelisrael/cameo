@@ -15,6 +15,8 @@
   --brand-hover: #a8380a;
   --brand-ink: #ffffff;
   --brand-soft: #fbe9df;
+  --live: #1f9d55; /* the "ready / online" dot only, never text */
+  --live-ring: rgb(31 157 85 / 0.45);
   --brand-text: #a8380a; /* brand as text on paper, sheet or brand-soft: clears 4.5:1 */
   --accent: var(--brand);
   --danger: #b8361f;
@@ -50,6 +52,8 @@
   --brand-hover: #ff9470;
   --brand-ink: #1a120d;
   --brand-soft: #3a1f16;
+  --live: #3ccf7a;
+  --live-ring: rgb(60 207 122 / 0.4);
   --brand-text: #ff7a4d;
   --danger: #ff8a76;
   --check-a: #2a2a2e;
@@ -424,13 +428,37 @@ kbd {
   color: var(--ink);
 }
 
+/* Ready: an "online" dot (green, a slow ring breathing out of it) in place of the check */
 .model--ready {
+  gap: 10px;
   color: var(--ink-2);
 }
 
-.model--ready svg {
-  color: var(--accent);
+.model__live {
   flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin: 0 3px 0 4px;
+  border-radius: 50%;
+  background: var(--live);
+  box-shadow: 0 0 0 0 var(--live-ring);
+  animation: live 2.4s var(--ease) infinite;
+}
+
+@keyframes live {
+  0% {
+    box-shadow: 0 0 0 0 var(--live-ring);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .model__live {
+    animation: none;
+  }
 }
 
 .model--error {
@@ -1961,18 +1989,6 @@ kbd {
   transition: transform 280ms var(--ease);
 }
 
-.seg--tools {
-  --n: 3;
-}
-
-.seg:has(> .seg__btn:nth-child(2)[aria-checked='true']) {
-  --at: 1;
-}
-
-.seg:has(> .seg__btn:nth-child(3)[aria-checked='true']) {
-  --at: 2;
-}
-
 .seg__btn {
   min-height: 38px;
   border: 0;
@@ -2217,5 +2233,106 @@ kbd {
   .switch__track::after,
   .editor__cursor {
     transition: none;
+  }
+}
+
+.editor__tap {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+/* Select: the tap marker. A brand dot where the finger landed, a ring breathing out while the model looks. */
+.editor__tap {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--brand-ink);
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+}
+
+.editor__tap::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--brand);
+  border-radius: 50%;
+  animation: tap-ring 1.1s var(--ease) infinite;
+}
+
+@keyframes tap-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+
+/* Select mode row: Keep | Remove, then one line saying what a tap does or what is loading. */
+.seg--pick {
+  flex: none;
+}
+
+.editbar__note {
+  display: flex;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 36px;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.editbar__note .mono {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.editbar__note[data-state='downloading']::before,
+.editbar__note[data-state='embedding']::before,
+.editbar__note[data-state='idle']::before {
+  content: '';
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.editbar__note[data-state='error'] {
+  color: var(--danger);
+}
+
+.editbar__note[data-state='error'] .button {
+  margin-left: 2px;
+}
+
+@media (max-width: 600px) {
+  .editbar__row--tools .seg--pick,
+  .editbar__row--tools .editbar__note {
+    grid-column: 1 / -1;
+  }
+
+  .editbar__row--tools .editbar__note {
+    padding: 0 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editor__tap::after {
+    animation: none;
+    transform: scale(2);
+    opacity: 0.5;
+  }
+
+  .editbar__note::before {
+    animation: none;
   }
 }
