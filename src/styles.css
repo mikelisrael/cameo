@@ -1750,3 +1750,472 @@ kbd {
     height: min(60vh, 360px);
   }
 }
+
+/* ---------- Editor ---------- */
+
+.editor {
+  position: relative;
+  width: 100%;
+  height: var(--stage-h);
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.editor__bg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background-color: var(--check-a);
+  background-image: conic-gradient(var(--check-b) 25%, transparent 0 50%, var(--check-b) 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+
+.editor__world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+
+.editor__ghost,
+.editor__cut {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.editor__world--pixels :is(.editor__ghost, .editor__cut) {
+  image-rendering: pixelated;
+}
+
+.editor__cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  border-radius: 50%;
+  border: 1.5px solid #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.editor__zoom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.editor__pct {
+  min-width: 4ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.editor__before {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 3;
+  touch-action: none;
+}
+
+/* ---------- Edit bar ---------- */
+
+.editbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.editbar__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.editbar__row--tools {
+  justify-content: flex-start;
+}
+
+.editbar__history {
+  display: flex;
+  gap: 4px;
+}
+
+.editbar .button--icon {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.seg {
+  display: inline-flex;
+}
+
+.seg__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.switch[data-disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+}
+
+.switch {
+  position: relative;
+}
+
+.switch__track {
+  flex: none;
+  width: 36px;
+  height: 20px;
+}
+
+.editbar__slider {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 150px;
+  min-width: 150px;
+  max-width: 240px;
+  min-height: 44px;
+}
+
+.editbar__slider input {
+  width: 100%;
+  min-width: 56px;
+  min-height: 28px;
+}
+
+.editbar__val {
+  min-width: 3ch;
+  text-align: right;
+}
+
+.editbar__reset {
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+/* ---------- Edit bar and editor: the look ----------
+   Selection is a raised sheet on a well (the brand marks it with its icon, never a fill with text);
+   the marker slides between choices. Overlays on the photo are frosted pills so they read on any image. */
+
+.seg {
+  position: relative;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding: 3px;
+  border-radius: var(--r-control);
+  background: var(--well);
+  isolation: isolate;
+}
+
+.seg::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / var(--n, 2));
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--sheet);
+  box-shadow: 0 1px 2px rgb(29 26 22 / 0.08);
+  transform: translateX(calc(var(--at, 0) * 100%));
+  transition: transform 280ms var(--ease);
+}
+
+.seg--tools {
+  --n: 3;
+}
+
+.seg:has(> .seg__btn:nth-child(2)[aria-checked='true']) {
+  --at: 1;
+}
+
+.seg:has(> .seg__btn:nth-child(3)[aria-checked='true']) {
+  --at: 2;
+}
+
+.seg__btn {
+  min-height: 38px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 500;
+  transition: color 180ms var(--ease);
+}
+
+.seg__btn:hover,
+.seg__btn[aria-checked='true'] {
+  color: var(--ink);
+}
+
+.seg__btn svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.seg__btn[aria-checked='true'] svg {
+  color: var(--brand-text);
+}
+
+.seg__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.editbar__history .button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.editbar .button:disabled,
+.editor .button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+.editbar .button--quiet:disabled:hover {
+  background: var(--sheet);
+}
+
+.editbar__row--tools {
+  padding: 6px 8px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--sheet);
+  gap: 6px 18px;
+}
+
+/* Switch: a well track; on, it takes the brand with the knob riding over it. */
+.switch {
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.switch__track {
+  position: relative;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--well);
+  transition:
+    background-color 180ms var(--ease),
+    border-color 180ms var(--ease);
+}
+
+.switch__track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--knob);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform 280ms var(--ease);
+}
+
+.switch input:checked + .switch__track {
+  border-color: var(--brand);
+  background: var(--brand);
+}
+
+.switch input:checked + .switch__track::after {
+  transform: translateX(16px);
+}
+
+.switch input:focus-visible + .switch__track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.switch:has(input:checked) {
+  color: var(--ink);
+}
+
+.editbar__slider {
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.editbar__slider input {
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+.editbar__slider:has(input:disabled) {
+  opacity: 0.5;
+}
+
+.editbar__slider:has(input:disabled) input {
+  cursor: default;
+}
+
+.editbar__val {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.editbar__reset:not(:disabled):hover {
+  background: color-mix(in oklab, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+/* Overlays on the photo */
+.editor__zoom,
+.editor__before {
+  border: 1px solid color-mix(in oklab, var(--line-strong) 70%, transparent);
+  background: color-mix(in oklab, var(--sheet) 86%, transparent);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  box-shadow: 0 6px 18px -10px rgb(0 0 0 / 0.35);
+}
+
+.editor__zoom {
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+}
+
+.editor__zoom .button {
+  height: 34px;
+  min-width: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.editor__zoom .button:not(:disabled):hover {
+  background: var(--well);
+}
+
+.editor__pct {
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.editor__before {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.editor__before:hover {
+  background: color-mix(in oklab, var(--sheet) 96%, transparent);
+}
+
+.editor__before[aria-pressed='true'] {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand-text);
+}
+
+.editor__cursor {
+  transition:
+    width 120ms var(--ease),
+    height 120ms var(--ease);
+}
+
+@media (any-hover: none) {
+  .seg__btn {
+    min-height: 42px;
+  }
+
+  .editor__zoom .button {
+    height: 40px;
+    min-width: 40px;
+  }
+
+  .editor__before {
+    height: 44px;
+  }
+}
+
+@media (max-width: 600px) {
+  .editbar__row:first-child .seg {
+    flex: 1;
+  }
+
+  .editbar__row--tools {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 8px;
+    gap: 4px 12px;
+  }
+
+  .editbar__row--tools .seg--tools {
+    grid-column: 1 / -1;
+  }
+
+  .editbar__row--tools .editbar__slider {
+    grid-column: 1 / -1;
+    min-width: 0;
+    max-width: none;
+    padding: 0 6px;
+  }
+
+  .editbar__row--tools .switch {
+    padding-left: 6px;
+  }
+
+  .editbar__more {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seg::before,
+  .switch__track::after,
+  .editor__cursor {
+    transition: none;
+  }
+}
