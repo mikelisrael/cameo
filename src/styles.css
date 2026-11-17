@@ -763,6 +763,57 @@ kbd {
   color: var(--ink-2);
 }
 
+/* First look: the rough cut-out, shown while the sharp one is made, then faded out over it */
+
+.draft {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-control);
+  box-shadow: 0 0 0 1px var(--line);
+  background-color: var(--check-a);
+  background-image: conic-gradient(var(--check-b) 25%, transparent 0 50%, var(--check-b) 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+
+.pending .draft {
+  width: min(100%, calc((var(--stage-h) - 48px) * var(--ratio)));
+}
+
+.draft__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.fade-stack {
+  display: grid;
+  place-items: center;
+  width: 100%;
+}
+
+.fade-stack > * {
+  grid-area: 1 / 1;
+}
+
+.fade-stack .draft {
+  width: min(100%, calc(var(--stage-h) * var(--ratio)));
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity 280ms ease-in-out;
+}
+
+.fade-stack .draft--out {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-stack .draft {
+    transition: none;
+  }
+}
+
 /* Failure */
 
 .failure {

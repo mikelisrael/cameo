@@ -66,8 +66,9 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 - Saved for later, best first:
   - [ ] An int8 (quantized) CPU model made with ONNX Runtime's tools and hosted on Hugging Face: about 2–3× faster on WASM and a third of the download; judge the edges on `?bench` before switching.
   - [ ] Run the Phase 1 edge refinement as WebGPU compute (saves ~2–3 s on 12 MP).
-  - [ ] Batch overlap: decode the next photo while the model runs on the current one.
-  - [ ] More machines on the GPU path: fix each fallback reason "About this device" reports.
+  - [ ] Batch overlap: decode the next photo while the model runs on the current one (lower value now that drafts show at once).
+  - [x] (Done 2026-11-17: "About this device" shows start-up and each photo's prep / cut-out / clean-up; a rough U-2-Netp cut-out (4.6 MB, self-hosted) shows first and crossfades to the sharp one; clean-up runs only near the edges, exactly; the model download retries and resumes, with Try again.) Lightning cut-outs.
+  - [ ] More machines on the GPU path: GPUs with under 33 storage buffers (Intel Iris Xe class) can't run BiRefNet on WebGPU (ORT's Split kernel binds 1+32 outputs). A graph rewrite runs but was slower than WASM on Intel gen-12lp, and fp16 WebGPU gave a wrong mask there: check fp16 on other GPUs before trusting it.
 
 ## Phase 3: a picture ready for where it's going (output)
 
@@ -87,7 +88,7 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 - [x] Pinch-zoom on the stage, swipe between images, haptic tick on Android when a cut-out finishes. (Haptic tick done. Swipe and pinch on the stage not built: Compare's slider drags across the whole stage, and Compare deliberately doesn't zoom; Edit already pinches.)
 - [x] Keyboard shortcuts (paste, download, next/previous image, brush keys) with a cheat sheet.
 - [x] Accessibility audit (screen reader pass through the whole flow, focus order, reduced motion). Done 2026-11-17: one polite announcer, named slider and canvas, workspace h1, axe clean in both themes. The Edit brush stays pointer-only (freehand painting).
-- [ ] Playwright e2e for the core flow (drop → cut-out → background → download) running on the CPU path, so CI needs no GPU.
+- [x] (Done: `pnpm e2e`, CI on every PR, #25.) Playwright e2e for the core flow (drop → cut-out → background → download) running on the CPU path, so CI needs no GPU.
 - [ ] Performance budget: first screen under 100 KB of JS, model download progress honest, warm start under 3 s.
 - [ ] Counting usage without images (page views and "cut-out made" counts only), if Israel wants numbers; check it against the privacy rule first.
 

@@ -10,7 +10,7 @@ import {
   type GradientName,
 } from '../lib/background'
 import type { Format, Frame, Shadow } from '../lib/compose'
-import type { Diagnostics } from '../lib/protocol'
+import type { Diagnostics, Timings } from '../lib/protocol'
 import type { Item } from './Queue'
 import { CheckIcon, ChevronDownIcon, PlusIcon, DownloadIcon, InfoIcon, LockIcon, ShareIcon, Spinner } from './icons'
 import { Segmented } from './Segmented'
@@ -77,6 +77,9 @@ type Props = {
   /** Pixel size of what will be downloaded; null while a framed size is still rendering. */
   outSize: { width: number; height: number } | null
   diagnostics: Diagnostics | null
+  timings: Timings | null
+  /** How long the first look took, ms; null when there was none. */
+  draftMs: number | null
   /** This session's GPU couldn't run the model, so the work moved to the processor. */
   fellBack: boolean
   onRetryGpu: () => void
@@ -115,6 +118,8 @@ export function Toolbar({
   preview,
   outSize,
   diagnostics,
+  timings,
+  draftMs,
   fellBack,
   onRetryGpu,
   scaled,
@@ -387,7 +392,7 @@ export function Toolbar({
             Nothing is uploaded.
           </span>
         </p>
-        {diagnostics && <DeviceDetails d={diagnostics} onRetryGpu={onRetryGpu} />}
+        {diagnostics && <DeviceDetails d={diagnostics} timings={timings} draftMs={draftMs} onRetryGpu={onRetryGpu} />}
         <button type="button" className="device__summary panel__shortcuts" onClick={onShortcuts}>
           Keyboard shortcuts <kbd>?</kbd>
         </button>
@@ -404,13 +409,29 @@ const WHY: Record<Exclude<Diagnostics['reason'], 'gpu'>, string> = {
   remembered: "The graphics card couldn't run the model on an earlier visit.",
 }
 
+/** Seconds with one decimal under 10 s, whole seconds above. */
+export function seconds(ms: number) {
+  const s = ms / 1000
+  return `${s < 10 ? s.toFixed(1) : Math.round(s)} s`
+}
+
 /** What this device is doing with the model, and a way back to the GPU when it gave up on it. No image data. */
-function DeviceDetails({ d, onRetryGpu }: { d: Diagnostics; onRetryGpu: () => void }) {
+function DeviceDetails({
+  d,
+  timings,
+  draftMs,
+  onRetryGpu,
+}: {
+  d: Diagnostics
+  timings: Timings | null
+  draftMs: number | null
+  onRetryGpu: () => void
+}) {
   const why =
     d.reason === 'gpu'
       ? null
       : d.reason === 'limits'
-        ? `The graphics card allows ${d.gpu?.storageBuffers ?? 'too few'} storage buffers per shader; the model needs 17.`
+        ? `The graphics card allows ${d.gpu?.storageBuffers ?? 'too few'} storage buffers per shader; the model needs 33.`
         : WHY[d.reason]
   const gpuName = d.gpu && (d.gpu.description || [d.gpu.vendor, d.gpu.architecture].filter(Boolean).join(' '))
   const canRetry = d.device === 'wasm' && (d.reason === 'gpu-failed' || d.reason === 'remembered')
@@ -452,6 +473,22 @@ function DeviceDetails({ d, onRetryGpu }: { d: Diagnostics; onRetryGpu: () => vo
               </span>
             </dd>
           </div>
+          <div>
+            <dt>Start-up</dt>
+            <dd className="mono">{seconds(d.loadMs)}</dd>
+          </div>
+          {timings && (
+            <div>
+              <dt>Last photo</dt>
+              <dd>
+                <span className="mono">{seconds(timings.total)}</span>
+                <span className="device__why">
+                  {draftMs !== null && `first look ${seconds(draftMs)} · `}cut-out {seconds(timings.cutout)} · clean-up{' '}
+                  {seconds(timings.mask + timings.refine + timings.decontaminate)} · prep {seconds(timings.prepare)}
+                </span>
+              </dd>
+            </div>
+          )}
         </dl>
         {canRetry && (
           <button type="button" className="button button--quiet" onClick={onRetryGpu}>

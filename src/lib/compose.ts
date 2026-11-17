@@ -127,6 +127,39 @@ export function cutout(
   return out
 }
 
+/** The first look at a cut-out: the photo shrunk to a preview size, the rough mask stretched over it, drawn on `fill`. */
+export async function draftPreview(
+  original: ImageBitmap,
+  mask: Mask,
+  fill: string | undefined,
+  images?: Map<string, ImageBitmap>,
+): Promise<{ blob: Blob; ratio: number }> {
+  const k = Math.min(1, 1024 / Math.max(original.width, original.height))
+  const small = await createImageBitmap(original, {
+    resizeWidth: Math.max(1, Math.round(original.width * k)),
+    resizeHeight: Math.max(1, Math.round(original.height * k)),
+    resizeQuality: 'medium',
+  })
+  try {
+    const canvas = cutout(small, mask, fill, undefined, images)
+    const ratio = canvas.width / canvas.height
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (b) => {
+          canvas.width = canvas.height = 0
+          if (b) resolve(b)
+          else reject(new Error('Could not draw the first look'))
+        },
+        fill ? 'image/jpeg' : 'image/png',
+        0.85,
+      ),
+    )
+    return { blob, ratio }
+  } finally {
+    small.close()
+  }
+}
+
 export type Format = 'png' | 'webp' | 'jpg'
 
 const MIME: Record<Format, string> = { png: 'image/png', webp: 'image/webp', jpg: 'image/jpeg' }
