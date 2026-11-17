@@ -104,6 +104,19 @@ export function useRemover() {
         }
       }
     }
+    // The script itself failed (a chunk 404 after a deploy, an import error in an old browser):
+    // no message will ever come, so settle everything waiting and show the same error as a load failure.
+    const crashed = (e: Event) => {
+      e.preventDefault()
+      if (workerRef.current !== worker) return // a worker we already replaced
+      const message = e instanceof ErrorEvent && e.message ? e.message : 'The worker failed to start'
+      for (const p of map.values()) p.reject(new Error(message))
+      map.clear()
+      setError('a file was missing')
+      setStatus('error')
+    }
+    worker.onerror = crashed
+    worker.onmessageerror = crashed
     worker.postMessage({ type: 'load', forceWasm, reason } satisfies WorkerIn)
     // A posted bitmap is transferred and can't be sent twice, so each re-post sends a fresh copy.
     for (const [id, p] of map) {
