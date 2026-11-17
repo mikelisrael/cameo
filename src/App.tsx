@@ -33,7 +33,7 @@ import {
   type Frame,
   type Shadow,
 } from './lib/compose'
-import { decodeImage } from './lib/decode'
+import { ACCEPT_ATTR, decodeImage } from './lib/decode'
 import { isDirty, newHistory, push, redo, undo, type History } from './lib/history'
 import type { Mask } from './lib/protocol'
 import { useHowItWorks } from './lib/useHowItWorks'
@@ -151,6 +151,8 @@ export default function App() {
   // undo can step back to an older one; nothing is stored beyond this session.
   const images = useRef(new Map<string, ImageBitmap>())
   const imageUrlRef = useRef(new Map<string, string>())
+  // Bumped when the picked pictures are cleared, so a pick still decoding is dropped.
+  const imageGen = useRef(0)
   const imageSeq = useRef(0)
   const [imageUrls, setImageUrls] = useState(() => new Map<string, string>())
   const [lastImage, setLastImage] = useState<string | null>(null)
@@ -268,6 +270,7 @@ export default function App() {
   }, [items, selected])
 
   const clearImages = useCallback(() => {
+    imageGen.current++
     for (const b of images.current.values()) b.close()
     for (const u of imageUrlRef.current.values()) URL.revokeObjectURL(u)
     images.current.clear()
@@ -279,6 +282,7 @@ export default function App() {
   // Leaving the page frees the picked pictures and the blurred copies.
   useEffect(
     () => () => {
+      imageGen.current++
       for (const b of images.current.values()) b.close()
       for (const u of imageUrlRef.current.values()) URL.revokeObjectURL(u)
       for (const u of blurUrls.current.values()) URL.revokeObjectURL(u)
@@ -719,8 +723,14 @@ export default function App() {
   // Opens a picture from the files as a background; HEIC works and a huge one is shrunk, as for photos.
   const pickImage = useCallback(async (file: File | undefined) => {
     if (!file) return
+    const gen = imageGen.current
     try {
       const d = await decodeImage(file)
+      if (gen !== imageGen.current) {
+        d.bitmap.close()
+        URL.revokeObjectURL(d.url)
+        return
+      }
       const id = `image:${++imageSeq.current}`
       images.current.set(id, d.bitmap)
       imageUrlRef.current.set(id, d.url)
@@ -898,7 +908,7 @@ export default function App() {
       <input
         ref={imageInput}
         type="file"
-        accept="image/*"
+        accept={ACCEPT_ATTR}
         hidden
         onChange={(e) => {
           const file = e.target.files?.[0]
