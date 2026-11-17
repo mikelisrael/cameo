@@ -11,7 +11,7 @@
     <meta name="theme-color" content="#faf6f1" />
     <meta name="color-scheme" content="light dark" />
     <script>
-      // Theme before first paint, so dark mode never flashes light: saved choice, else the system's.
+      // Theme and accent before first paint, so dark mode never flashes light: saved choice, else the system's.
       ;(function () {
         var t = null
         try {
@@ -25,7 +25,22 @@
           }
         }
         document.documentElement.dataset.theme = t
-        if (t === 'dark') document.querySelector('meta[name="theme-color"]').content = '#120b1b'
+        var a = 'persimmon'
+        try {
+          var s = localStorage.getItem('cutout:accent')
+          if (s === 'raspberry' || s === 'lavender' || s === 'sage') {
+            a = s
+            document.documentElement.dataset.accent = a
+          }
+        } catch (e) {} // storage blocked: the default accent stays
+        // These mirror --paper in styles.css; the stylesheet isn't loaded yet at this point.
+        var paper = {
+          persimmon: ['#faf6f1', '#120b1b'],
+          raspberry: ['#fbf5f6', '#160a11'],
+          lavender: ['#f7f6fb', '#0f0d1a'],
+          sage: ['#f5f7f3', '#0b120e'],
+        }
+        document.querySelector('meta[name="theme-color"]').content = paper[a][t === 'dark' ? 1 : 0]
       })()
     </script>
     <link rel="manifest" href="/manifest.webmanifest" />

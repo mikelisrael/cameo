@@ -64,6 +64,124 @@
   color-scheme: dark;
 }
 
+/* Accent colours a person can pick in Appearance (Israel, 17 Nov 2026). Persimmon is the default
+   and needs no attribute. Each accent brings its own neutrals too, so the page is a tint of the
+   accent's family rather than persimmon's cream and plum (Israel, 17 Nov 2026): raspberry sits on
+   blush and wine-black, lavender on lilac-grey and violet-black, sage on green-grey and
+   forest-black. Each accent sets its light values, then its dark ones; the dark rule's extra
+   attribute outranks both blocks above. Text on the fill and brand text on paper, sheet and
+   brand-soft clear 5:1; ink-3 clears 4.5:1 on paper, sheet and well. */
+:root[data-accent='raspberry'] {
+  --paper: #fbf5f6;
+  --well: #f4e8ec;
+  --ink: #1e1619;
+  --ink-2: #5e5257;
+  --ink-3: #6c5f65;
+  --line: #eddfe3;
+  --line-strong: #d9c5cc;
+  --check-b: #f2e7ea;
+  --lift: 0 1px 0 rgb(30 22 25 / 0.03), 0 18px 40px -24px rgb(30 22 25 / 0.24);
+  --brand: #be185d;
+  --brand-hover: #9d174d;
+  --brand-soft: #fce7f0;
+  --brand-text: #9d174d;
+  --glow: rgb(214 51 112 / 0.14);
+}
+
+:root[data-theme='dark'][data-accent='raspberry'] {
+  --paper: #160a11;
+  --sheet: #1f1119;
+  --well: #2b1a23;
+  --ink: #faf3f6;
+  --ink-2: #c8b3bd;
+  --ink-3: #a08a95;
+  --line: #2f1d27;
+  --line-strong: #432a37;
+  --check-a: #2f1d27;
+  --check-b: #24151d;
+  --lift: 0 0 0 1px rgb(0 0 0 / 0.25), 0 24px 48px -28px rgb(0 0 0 / 0.75);
+  --brand: #ff6b9a;
+  --brand-hover: #ff8db2;
+  --brand-ink: #1a0d14;
+  --brand-soft: #3b1a2c;
+  --brand-text: #ff6b9a;
+  --glow: rgb(255 107 154 / 0.06);
+}
+
+:root[data-accent='lavender'] {
+  --paper: #f7f6fb;
+  --well: #eeebf6;
+  --ink: #1a1724;
+  --ink-2: #57536a;
+  --ink-3: #66627a;
+  --line: #e4e0ef;
+  --line-strong: #cdc7de;
+  --check-b: #ebe8f3;
+  --lift: 0 1px 0 rgb(26 23 36 / 0.03), 0 18px 40px -24px rgb(26 23 36 / 0.24);
+  --brand: #7c5cc4;
+  --brand-hover: #6a4bb0;
+  --brand-soft: #efe8fb;
+  --brand-text: #6a4bb0;
+  --glow: rgb(150 120 220 / 0.16);
+}
+
+:root[data-theme='dark'][data-accent='lavender'] {
+  --paper: #0f0d1a;
+  --sheet: #171425;
+  --well: #221e33;
+  --ink: #f5f3fc;
+  --ink-2: #b9b4cf;
+  --ink-3: #9590ad;
+  --line: #262238;
+  --line-strong: #37324d;
+  --check-a: #262238;
+  --check-b: #1c1a2c;
+  --lift: 0 0 0 1px rgb(0 0 0 / 0.25), 0 24px 48px -28px rgb(0 0 0 / 0.75);
+  --brand: #c4b0ff;
+  --brand-hover: #d5c6ff;
+  --brand-ink: #1a0d24;
+  --brand-soft: #2a2142;
+  --brand-text: #c4b0ff;
+  --glow: rgb(196 176 255 / 0.06);
+}
+
+:root[data-accent='sage'] {
+  --paper: #f5f7f3;
+  --well: #e9eee7;
+  --ink: #161b17;
+  --ink-2: #4f5a52;
+  --ink-3: #5d6860;
+  --line: #dfe6dd;
+  --line-strong: #c5d0c3;
+  --check-b: #e8ede6;
+  --lift: 0 1px 0 rgb(22 27 23 / 0.03), 0 18px 40px -24px rgb(22 27 23 / 0.24);
+  --brand: #3f7a57;
+  --brand-hover: #336649;
+  --brand-soft: #e5f0e8;
+  --brand-text: #336649;
+  --glow: rgb(90 150 110 / 0.14);
+}
+
+:root[data-theme='dark'][data-accent='sage'] {
+  --paper: #0b120e;
+  --sheet: #121b16;
+  --well: #1b2620;
+  --ink: #f1f6f2;
+  --ink-2: #b0c0b5;
+  --ink-3: #8a9c90;
+  --line: #1f2b24;
+  --line-strong: #2e3d34;
+  --check-a: #1f2b24;
+  --check-b: #17211b;
+  --lift: 0 0 0 1px rgb(0 0 0 / 0.25), 0 24px 48px -28px rgb(0 0 0 / 0.75);
+  --brand: #94d1aa;
+  --brand-hover: #afdcbf;
+  --brand-ink: #0e1a13;
+  --brand-soft: #1c2a26;
+  --brand-text: #94d1aa;
+  --glow: rgb(148 209 170 / 0.05);
+}
+
 @property --pos {
   syntax: '<percentage>';
   inherits: true;
@@ -136,7 +254,7 @@ a {
     border-color 260ms var(--ease),
     color 260ms var(--ease),
     fill 260ms var(--ease),
-    transform 280ms var(--ease) !important; /* keeps the switch thumb sliding */
+    transform 280ms var(--ease) !important; /* keeps sliding markers and tone rings moving */
 }
 
 img {
@@ -1325,64 +1443,239 @@ kbd {
   color: #fff;
 }
 
-/* Theme switch */
+/* Appearance: one round button for theme and colour (Israel, 17 Nov 2026). Its dot is the accent,
+   the same disc-on-a-square idea as the Mark; the panel is a native popover under it. */
 
-.theme-switch {
-  position: relative;
-  display: inline-grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: center;
-  width: 64px;
-  height: 34px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--well);
-  cursor: pointer;
+.appearance {
   flex-shrink: 0;
 }
 
-/* A 44px touch target around the 34px switch. */
-.theme-switch::before {
+.appearance__trigger {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--well);
+  color: var(--ink-2);
+  cursor: pointer;
+  anchor-name: --appearance;
+  transition:
+    border-color 180ms var(--ease),
+    background-color 180ms var(--ease),
+    color 180ms var(--ease);
+}
+
+/* A 44px touch target around the 36px button. */
+.appearance__trigger::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
+
+.appearance__trigger:hover,
+.appearance:has(.appearance__panel:popover-open) .appearance__trigger {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.appearance:has(.appearance__panel:popover-open) .appearance__trigger {
+  background: var(--sheet);
+}
+
+.appearance__dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--paper);
+}
+
+.appearance__panel {
+  width: min(288px, calc(100vw - 16px));
+  margin: auto;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--sheet);
+  color: var(--ink);
+  box-shadow: var(--lift);
+}
+
+.appearance__panel:popover-open {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: drop 180ms var(--ease) backwards;
+}
+
+/* Under its button, right edges aligned, flipping up if there is no room below. */
+@supports (position-anchor: --a) {
+  .appearance__panel {
+    position-anchor: --appearance;
+    position-area: block-end span-inline-start;
+    margin: 8px 0 0;
+    position-try-fallbacks: flip-block;
+  }
+}
+
+.appearance__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.appearance__group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.appearance__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+/* Colour tones: a disc and its name, all four always named. The picked one wears the Mark's
+   dashed cut line as its ring, which turns into place, and a check in the accent's own text colour. */
+
+.tones {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.tone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 0 6px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 180ms var(--ease),
+    color 180ms var(--ease);
+}
+
+.tone > span:not(.tone__disc) {
+  white-space: nowrap;
+}
+
+.tone:hover {
+  background: var(--well);
+  color: var(--ink-2);
+}
+
+.tone[aria-checked='true'] {
+  color: var(--ink);
+}
+
+.tone__disc {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--sw);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+}
+
+.tone__disc::after {
   content: '';
   position: absolute;
   inset: -5px;
-}
-
-.theme-switch__thumb {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 28px;
-  height: 26px;
+  border: 1.5px dashed var(--ink-2);
   border-radius: 999px;
-  background: var(--sheet);
-  box-shadow:
-    0 0 0 1px var(--line),
-    0 2px 6px -2px rgb(0 0 0 / 0.25);
-  transition: transform 280ms var(--ease);
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.8);
+  transition:
+    opacity 180ms var(--ease),
+    transform 280ms var(--ease);
 }
 
-.theme-switch[aria-checked='true'] .theme-switch__thumb {
-  transform: translateX(28px);
+.tone[aria-checked='true'] .tone__disc::after {
+  opacity: 1;
+  transform: none;
 }
 
-.theme-switch__icon {
-  position: relative;
-  justify-self: center;
-  color: var(--ink-3);
-  transition: color 180ms var(--ease);
+.tone__check {
+  color: var(--sw-ink);
+  stroke-width: 2.6;
+  opacity: 0;
+  transform: scale(0.5);
+  transition:
+    opacity 180ms var(--ease),
+    transform 280ms var(--ease);
 }
 
-.theme-switch[aria-checked='false'] .theme-switch__icon:nth-of-type(1),
-.theme-switch[aria-checked='true'] .theme-switch__icon:nth-of-type(2) {
-  color: var(--brand-text);
+.tone[aria-checked='true'] .tone__check {
+  opacity: 1;
+  transform: none;
 }
 
-.theme-switch:hover .theme-switch__thumb {
-  box-shadow:
-    0 0 0 1px var(--line-strong),
-    0 2px 6px -2px rgb(0 0 0 / 0.3);
+/* Each disc shows its accent as it would look in the current theme (the tokens above). */
+.tone__disc[data-accent='persimmon'] {
+  --sw: #c2410c;
+  --sw-ink: #ffffff;
+}
+
+.tone__disc[data-accent='raspberry'] {
+  --sw: #be185d;
+  --sw-ink: #ffffff;
+}
+
+.tone__disc[data-accent='lavender'] {
+  --sw: #7c5cc4;
+  --sw-ink: #ffffff;
+}
+
+.tone__disc[data-accent='sage'] {
+  --sw: #3f7a57;
+  --sw-ink: #ffffff;
+}
+
+:root[data-theme='dark'] .tone__disc[data-accent='persimmon'] {
+  --sw: #ff7a4d;
+  --sw-ink: #1a0d14;
+}
+
+:root[data-theme='dark'] .tone__disc[data-accent='raspberry'] {
+  --sw: #ff6b9a;
+  --sw-ink: #1a0d14;
+}
+
+:root[data-theme='dark'] .tone__disc[data-accent='lavender'] {
+  --sw: #c4b0ff;
+  --sw-ink: #1a0d24;
+}
+
+:root[data-theme='dark'] .tone__disc[data-accent='sage'] {
+  --sw: #94d1aa;
+  --sw-ink: #0e1a13;
+}
+
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
 }
 
 /* Status pill */

@@ -1,19 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
+import { Appearance } from './components/Appearance'
 import { Compare } from './components/Compare'
 import { EditBar } from './components/EditBar'
 import { Editor, type BrushSettings, type EditorHandle, type Tool } from './components/Editor'
 import { useFileIntake } from './components/DropZone'
-import {
-  AlertIcon,
-  CameraIcon,
-  InfoIcon,
-  LockIcon,
-  MoonIcon,
-  ResetIcon,
-  Spinner,
-  SunIcon,
-  UploadIcon,
-} from './components/icons'
+import { AlertIcon, CameraIcon, InfoIcon, LockIcon, ResetIcon, Spinner, UploadIcon } from './components/icons'
 import { Queue, type Item } from './components/Queue'
 import { Shortcuts } from './components/Shortcuts'
 import { Toolbar } from './components/Toolbar'
@@ -40,6 +31,7 @@ import type { Mask } from './lib/protocol'
 import { useHowItWorks } from './lib/useHowItWorks'
 import { useRemover, type Result, type Status } from './lib/useRemover'
 import { useSegmenter } from './lib/useSegmenter'
+import { useAccent } from './lib/useAccent'
 import { useTheme } from './lib/useTheme'
 
 const HowItWorks = lazy(() => import('./components/HowItWorks'))
@@ -92,6 +84,7 @@ export default function App() {
   const { status, progress, diagnostics, timings, draftMs, fellBack, error, retrying, process, retryGpu, retryLoad } =
     useRemover()
   const theme = useTheme()
+  const accent = useAccent()
   const how = useHowItWorks()
   // Mirrors how.isOpen for handlers registered once or owned elsewhere (paste lives in useFileIntake).
   const howOpen = useRef(how.isOpen)
@@ -1002,19 +995,13 @@ export default function App() {
               <span className="hide-sm">How it works</span>
             </a>
           )}
-          {/* Light / dark switch: the thumb slides under the active icon. */}
-          <button
-            type="button"
-            role="switch"
-            aria-checked={theme.theme === 'dark'}
-            aria-label="Dark mode"
-            className="theme-switch"
-            onClick={theme.toggle}
-          >
-            <span className="theme-switch__thumb" aria-hidden="true" />
-            <SunIcon className="theme-switch__icon" width={15} height={15} />
-            <MoonIcon className="theme-switch__icon" width={15} height={15} />
-          </button>
+          <Appearance
+            theme={theme.theme}
+            mode={theme.mode}
+            onMode={theme.setMode}
+            accent={accent.accent}
+            onAccent={accent.setAccent}
+          />
         </div>
       </header>
 

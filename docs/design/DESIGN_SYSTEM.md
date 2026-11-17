@@ -5,14 +5,14 @@ Cameo is a tool people open, use for thirty seconds and close. The look gets out
 ## 1. Principles
 
 1. **The photo is the hero.** Chrome is neutral so the image reads first. Nothing coloured sits behind or around the photo except the transparency checkerboard and the backgrounds the person picks.
-2. **Persimmon is the brand colour.** It fills the main action (Choose images, Download), marks progress, selection and focus, and tints the drop sheet. Text on it uses `--brand-ink`; brand-coloured text uses `--brand-text`.
+2. **Persimmon is the brand colour,** and the default accent; a person can switch to raspberry, lavender or sage in Appearance (§2). The accent fills the main action (Choose images, Download), marks progress, selection and focus, and tints the drop sheet. Text on it uses `--brand-ink`; brand-coloured text uses `--brand-text`.
 3. **Opens straight into the tool.** No marketing hero, no feature grid, no "AI-powered ✨". The first screen is the drop sheet.
 4. **One delight moment: the reveal.** When a cut-out arrives, the divider sweeps in from the right and the background falls away. Nothing else animates for show.
 5. **Privacy is said plainly:** images never leave the device.
 
 ## 2. Tokens
 
-All colours are CSS custom properties in `src/styles.css`: light on `:root`, dark on `:root[data-theme='dark']`. The theme is set before first paint by the script in `index.html` (saved choice in `localStorage` `cutout:theme`, else the system's) and changed with the switch in the header (`src/lib/useTheme.ts`). Use these tokens only; no new colours. (The background swatches a person picks for a cut-out are content, not chrome.)
+All colours are CSS custom properties in `src/styles.css`: light on `:root`, dark on `:root[data-theme='dark']`. The theme is set before first paint by the script in `index.html` (saved choice in `localStorage` `cutout:theme`, else the system's) and changed in the Appearance popover in the header (`src/components/Appearance.tsx`: Light, Dark or Auto, and the accent). Use these tokens only; no new colours. (The background swatches a person picks for a cut-out are content, not chrome.)
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
@@ -33,6 +33,19 @@ All colours are CSS custom properties in `src/styles.css`: light on `:root`, dar
 | `--check-a` / `--check-b` | `#ffffff` / `#efe9e1` | `#2a2234` / `#1f1828` | transparency checkerboard |
 
 Dark is a **deep plum-black** (Israel, 17 Nov 2026, from a reference he liked: page `#120b1b`, lifted surfaces a step lighter, bright near-white type), never brown (16 Nov 2026); persimmon is still the only warm, saturated thing on a dark page. Light is warm paper with a persimmon glow.
+
+### Accents (Israel, 17 Nov 2026)
+
+The table above is persimmon, the default. A person can pick another accent in Appearance; it is `data-accent` on `<html>`, saved in `localStorage` `cutout:accent` (persimmon removes it) and set before first paint with the theme. **An accent brings its own neutrals**: the page is a tint of the accent's family in both themes, not persimmon's cream and plum. Each accent's block in `src/styles.css` sets the brand tokens and paper, well, ink 1–3, lines, checkerboard and lift (and sheet in dark; light sheets stay white so the photo reads first). `<meta name="theme-color">` follows `--paper` (`index.html` mirrors the eight paper values for first paint).
+
+| Accent | Brand light / dark | Paper light / dark | Family |
+|---|---|---|---|
+| Persimmon | `#c2410c` / `#ff7a4d` | `#faf6f1` / `#120b1b` | warm cream / plum-black |
+| Raspberry | `#be185d` / `#ff6b9a` | `#fbf5f6` / `#160a11` | blush / wine-black |
+| Lavender | `#7c5cc4` / `#c4b0ff` | `#f7f6fb` / `#0f0d1a` | lilac-grey / violet-black |
+| Sage | `#3f7a57` / `#94d1aa` | `#f5f7f3` / `#0b120e` | green-grey / forest-black |
+
+A new accent is a full family: every token the existing blocks set, in both themes, clearing 5:1 for `--brand-ink` on `--brand` and `--brand-text` on paper, sheet and brand-soft, and 4.5:1 for `--ink-3` on paper, sheet and well. No yellows (they turn brown to pass). Add its disc to the `.tone__disc` mirrors and its paper to `index.html`.
 
 ## 3. Type
 

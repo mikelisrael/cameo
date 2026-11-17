@@ -4,12 +4,14 @@ import { useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from '
 export function Segmented<T extends string>({
   label,
   className,
+  itemClassName = 'seg__btn',
   options,
   value,
   onChange,
 }: {
   label: string
   className: string
+  itemClassName?: string
   options: { value: T; label: string; icon?: ReactNode }[]
   value: T
   onChange: (value: T) => void
@@ -50,7 +52,7 @@ export function Segmented<T extends string>({
           role="radio"
           aria-checked={o.value === value}
           tabIndex={o.value === value ? 0 : -1}
-          className="seg__btn"
+          className={itemClassName}
           onClick={() => onChange(o.value)}
         >
           {o.icon}

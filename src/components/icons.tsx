@@ -102,6 +102,13 @@ export const MoonIcon = (p: P) => (
   </svg>
 )
 
+export const AutoIcon = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 3.5a8.5 8.5 0 0 1 0 17Z" fill="currentColor" />
+  </svg>
+)
+
 export const XIcon = (p: P) => (
   <svg {...base(p)}>
     <path d="M7 7l10 10M17 7 7 17" />
