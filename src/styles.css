@@ -95,6 +95,19 @@ body {
   text-size-adjust: 100%;
 }
 
+/* Read by screen readers, invisible on screen. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* No double-tap zoom delay on controls. */
 button,
 label,
@@ -955,7 +968,9 @@ kbd {
   background: var(--sheet);
   border: 1px solid var(--line);
   border-radius: var(--r-card);
-  animation: rise 500ms 80ms var(--ease) both;
+  /* Backwards, not both: a held transform would make the panel the containing block for the
+     phone's fixed save bar, pinning it to the panel's foot instead of the screen's. */
+  animation: rise 500ms 80ms var(--ease) backwards;
 }
 
 .panel--waiting {
@@ -1036,24 +1051,28 @@ kbd {
   margin-top: 2px;
 }
 
-/* "About this device": a native disclosure, so it works by touch and keyboard with no hover. */
+/* "About this device" and "Keyboard shortcuts": text links in the brand colour, as buttons. */
 .device__summary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-height: 32px;
   margin-left: 23px; /* lines up with the note's words, past the lock */
+  padding: 0;
+  border: 0;
   border-radius: 6px;
+  background: none;
+  font: inherit;
   font-size: 13px;
   font-weight: 500;
   color: var(--brand-text);
   cursor: pointer;
-  list-style: none;
   user-select: none;
 }
 
-.device__summary::-webkit-details-marker {
-  display: none;
+/* Only the device trigger anchors the popover (the shortcuts link shares the look). */
+.device > .device__summary {
+  anchor-name: --device;
 }
 
 .device__summary:hover {
@@ -1065,18 +1084,43 @@ kbd {
   transition: transform 180ms var(--ease);
 }
 
-.device[open] .device__chevron {
+.device:has(.device__body:popover-open) .device__chevron {
   transform: rotate(180deg);
 }
 
+/* The popover. Without anchor positioning it keeps the browser's centred placement. */
 .device__body {
+  width: min(288px, calc(100vw - 16px));
+  margin: auto;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--sheet);
+  color: var(--ink);
+  box-shadow: var(--lift);
+}
+
+.device__body:popover-open {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  margin-top: 8px;
-  padding: 14px;
-  background: var(--well);
-  border-radius: var(--r-control);
+  animation: rise 180ms var(--ease);
+}
+
+/* Over its trigger, opening upward (the trigger sits at the panel's foot), 8px from any edge. */
+@supports (position-anchor: --a) {
+  .device__body {
+    position-anchor: --device;
+    position-area: block-start span-inline-end;
+    margin: 0 0 8px;
+    position-try-fallbacks: flip-block;
+  }
+}
+
+.device__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .device__facts {
@@ -1489,8 +1533,10 @@ kbd {
     display: none;
   }
 
-  /* Room in the phone header: "Ready" says nothing a working cut-out doesn't; setup and work still show. */
-  .pill[data-status='ready'] {
+  /* Room in the phone header, down to 320px: the stage caption already says what the pill says
+     (setting up, removing the background), and the "+" tile beside the thumbnails adds images. */
+  .pill,
+  .header__add {
     display: none;
   }
 
@@ -1544,6 +1590,25 @@ kbd {
 
   .notice {
     bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+
+  /* Phones: "About this device" rises as a sheet from the bottom, over the save bar. */
+  .device__body {
+    position: fixed;
+    inset: auto 0 0;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 20px max(20px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom))
+      max(20px, env(safe-area-inset-left));
+    border-width: 1px 0 0;
+    border-radius: var(--r-card) var(--r-card) 0 0;
+    position-area: none;
+    position-try-fallbacks: none;
+  }
+
+  .device__body::backdrop {
+    background: rgb(0 0 0 / 0.32);
   }
 
   .swatches {
@@ -2428,6 +2493,11 @@ kbd {
   letter-spacing: -0.02em;
   color: var(--ink);
   outline: none;
+}
+
+/* The name in persimmon: the page's one colour moment (large text, clears 3:1 in both themes). */
+.how__brand {
+  color: var(--brand);
 }
 
 .how__lede {

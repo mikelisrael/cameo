@@ -164,6 +164,33 @@ export default function App() {
     [],
   )
 
+  // The one place screen readers hear progress: a single polite region, spoken once per event.
+  const [announcement, setAnnouncement] = useState('')
+  const announceFrame = useRef(0)
+  const announceQueue = useRef<string[]>([])
+  const announce = useCallback((text: string) => {
+    cancelAnimationFrame(announceFrame.current)
+    // Messages from the same moment (one photo done, the next started) are spoken together, not dropped.
+    announceQueue.current.push(text)
+    // Cleared first, so the same text twice is still spoken.
+    setAnnouncement('')
+    announceFrame.current = requestAnimationFrame(() => {
+      setAnnouncement(announceQueue.current.join(' '))
+      announceQueue.current = []
+    })
+  }, [])
+  const itemsRef = useRef(items)
+  itemsRef.current = items
+
+  const lastStatus = useRef<Status>('idle')
+  useEffect(() => {
+    const prev = lastStatus.current
+    lastStatus.current = status
+    if (status === 'loading' && prev !== 'loading')
+      announce('Setting up the background remover. This is a one-time download.')
+    else if (status === 'ready' && prev === 'loading') announce('Ready.')
+  }, [status, announce])
+
   const onFiles = useCallback(
     (files: File[]) => {
       for (const file of files) {
@@ -176,7 +203,10 @@ export default function App() {
         // Skipped if removed before its turn, so it doesn't hold up the images after it.
         process(
           file,
-          () => patch(id, { state: 'processing' }),
+          () => {
+            patch(id, { state: 'processing' })
+            announce(`Removing the background from ${file.name}.`)
+          },
           () => !entries.current.has(id),
           (d) => {
             const e = entries.current.get(id)
@@ -195,15 +225,21 @@ export default function App() {
             }
             e.result = result
             patch(id, { state: 'done' })
+            const all = itemsRef.current
+            const last = all.length >= 2 && all.every((i) => i.id === id || i.state === 'done')
+            announce(last ? `All ${all.length} cut-outs ready.` : `${file.name}: cut-out ready.`)
             // A short tick on phones. Android only: iOS Safari has no vibrate, so this is a no-op there.
             if (document.visibilityState === 'visible' && matchMedia('(any-hover: none)').matches)
               navigator.vibrate?.(12)
             setSelected((s) => s ?? id)
           })
-          .catch((err: Error) => patch(id, { state: 'error', error: err.message }))
+          .catch((err: Error) => {
+            patch(id, { state: 'error', error: err.message })
+            if (entries.current.has(id)) announce(`${file.name} couldn't be cut out.`)
+          })
       }
     },
-    [process, patch],
+    [process, patch, announce],
   )
 
   const forget = (id: string) => {
@@ -856,6 +892,9 @@ export default function App() {
   return (
     <div className="app" {...(hasItems && !how.isOpen ? intake.dragProps : {})}>
       {intake.picker}
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </p>
       <input
         ref={imageInput}
         type="file"
@@ -881,7 +920,7 @@ export default function App() {
                 <ResetIcon />
                 <span className="hide-sm">Start over</span>
               </button>
-              <button type="button" className="button button--quiet" onClick={intake.open}>
+              <button type="button" className="button button--quiet header__add" onClick={intake.open}>
                 <UploadIcon />
                 <span className="hide-sm">Add images</span>
               </button>
@@ -1004,6 +1043,7 @@ export default function App() {
           </footer>
         ) : (
           <main className="workspace">
+            <h1 className="sr-only">Cameo</h1>
             <section className="stage-col" aria-label="Preview">
               {current?.result && (
                 <EditBar
@@ -1055,6 +1095,7 @@ export default function App() {
                     width={current.result.original.width}
                     height={current.result.original.height}
                     reveal={reveal}
+                    name={selectedItem?.name}
                   />
                 ) : selectedItem?.state === 'error' ? (
                   <Failure name={selectedItem.name} message={selectedItem.error} onRetry={intake.open} />
@@ -1150,7 +1191,7 @@ function Mark() {
 function StatusPill({ status, progress }: { status: Status; progress: number }) {
   const setup = status === 'idle' || status === 'loading'
   return (
-    <span className="pill" data-status={status} role="status">
+    <span className="pill" data-status={status}>
       <span className="pill__dot" />
       {setup ? (
         <SetupText progress={progress} />
@@ -1192,18 +1233,25 @@ function ModelLine({ status, progress, error }: { status: Status; progress: numb
   }
   if (status === 'idle' || status === 'loading') {
     return (
-      <div className="model" role="status">
+      <div className="model">
         <span className="model__text">
           <SetupText progress={progress} download />
         </span>
-        <span className="bar" aria-hidden="true">
+        <span
+          className="bar"
+          role="progressbar"
+          aria-label="Setting up"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(progress * 100)}
+        >
           <span className="bar__fill" style={{ transform: `scaleX(${Math.max(0.02, progress)})` }} />
         </span>
       </div>
     )
   }
   return (
-    <div className="model model--ready" role="status">
+    <div className="model model--ready">
       <span className="model__live" aria-hidden />
       <span className="model__text">Ready. Next time it starts without the download.</span>
     </div>
@@ -1218,7 +1266,7 @@ function Pending({ item, status, progress }: { item: Item; status: Status; progr
         <img className="pending__img" src={item.thumb} alt="" draggable={false} />
         <span className="pending__scan" aria-hidden="true" />
       </div>
-      <p className="pending__caption" role="status">
+      <p className="pending__caption">
         <Spinner />
         {waiting ? <SetupText progress={progress} /> : 'Removing background…'}
       </p>

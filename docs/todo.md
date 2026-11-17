@@ -76,7 +76,7 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 - [ ] Optional from review: the background image picker uses `accept="image/*"`; use `ACCEPT_ATTR` so HEIC/AVIF files without a MIME type aren't greyed out on Windows. A pick that finishes after Start over should be dropped.
 - [x] **Crop and size presets:** Whole · Fit (trimmed to the subject with room) · 1:1 (1080, shops) · 4:5 (1080×1350, Instagram post) · 9:16 (1080×1920, story/status), subject centred on the chosen background, a preview in the panel; download, share and ZIP use it.
 - [ ] Passport photo preset: needs Israel's call on which country's rules (size, head height, background).
-- [x] **Sticker export:** "Download as sticker": 512×512 WebP (PNG where WebP can't be made), white outline, 16 px margin, ≤100 KB; shares on phones.
+- [x] **Sticker export:** "Download as sticker": 512×512 WebP (PNG where WebP can't be made), 16 px margin, ≤100 KB; shares on phones. (outline dropped 2026-11-17 at Israel's request)
 - [x] Formats: PNG, WebP (where the browser can encode it), JPG (white when the background is clear); **download all as ZIP** (fflate, stored); the current background and format apply to the whole batch, each image with its own edits.
 - [x] Share straight to apps (Web Share API) on phones: "Save or share" since Phase 0, now in every format.
 
@@ -86,7 +86,7 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 - [x] Workers now handle `onerror`: a worker that fails to start shows the error banner (Reload) or Select's Try again, and pending images go to their error state.
 - [x] Pinch-zoom on the stage, swipe between images, haptic tick on Android when a cut-out finishes. (Haptic tick done. Swipe and pinch on the stage not built: Compare's slider drags across the whole stage, and Compare deliberately doesn't zoom; Edit already pinches.)
 - [x] Keyboard shortcuts (paste, download, next/previous image, brush keys) with a cheat sheet.
-- [ ] Accessibility audit (screen reader pass through the whole flow, focus order, reduced motion).
+- [x] Accessibility audit (screen reader pass through the whole flow, focus order, reduced motion). Done 2026-11-17: one polite announcer, named slider and canvas, workspace h1, axe clean in both themes. The Edit brush stays pointer-only (freehand painting).
 - [ ] Playwright e2e for the core flow (drop → cut-out → background → download) running on the CPU path, so CI needs no GPU.
 - [ ] Performance budget: first screen under 100 KB of JS, model download progress honest, warm start under 3 s.
 - [ ] Counting usage without images (page views and "cut-out made" counts only), if Israel wants numbers; check it against the privacy rule first.

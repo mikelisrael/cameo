@@ -34,6 +34,7 @@ When a new practice or convention is set, write it down in the same session, wit
 - **A badge never breaks onto two lines** (Israel, 14 October 2026): chips and status badges are `whitespace-nowrap`; what sits beside one gives way.
 - **A phone row never cuts its facts** (10 November 2026): a quiet line wraps to two lines, as a title does; a fact that must always show goes above the chip, not at the end of a line that can run off.
 - **A grid names its columns** (15 October 2026, a settings screen on a phone ran off the screen): a bare `grid` makes one `auto` column as wide as its widest line, and a `truncate` line counts at full length, so a card holding one overflows a phone. Write `grid-cols-1` (minmax(0, 1fr)) on every grid, the single-column ones too.
+- **The phone header fits 320px in every state** (Israel, 17 November 2026: "doesn't seem responsive", the header grew while a photo processed and the page scrolled sideways). Measure `scrollWidth` at 360 and 320 before, during and after a cut-out, not only at rest.
 - **Width:** any `mx-auto max-w-*` wrapper that should fill space also gets `w-full`. Without it, it shrinks inside flex or grid parents.
 - **A text link looks like a link** (27 October 2026, of links in muted grey: "doesn't look very linky"): the brand's link colour, medium weight, underline on hover, clearing 4.5:1 on paper and on a sheet in both themes.
 - **A drop or remove button in a list turns red on hover** (`hover:bg-destructive/10 hover:text-destructive`, Israel, 13 October).
@@ -69,6 +70,7 @@ When a new practice or convention is set, write it down in the same session, wit
 - **What moves between two states eases there, it doesn't jump** (Israel, 10 October 2026: "we need things to ease in ease out like that if they don't already"). A fill, an underline or a marker that says which of several things is picked is one piece that slides to the new pick, about 0.28s on `[0.4, 0, 0.2, 1]`; colour and opacity changes take `transition-colors` or `transition-opacity` with `ease-in-out`. Still under reduced motion: a reduced-motion user gets the end state at once, never a broken one.
 - **A slide must not wait for the work it starts** (Israel, 11 October 2026: "a kind of lag in the chip when it moves"): the marker follows the pick at once and what it opens follows through `useDeferredValue`; move it with a CSS `transform` transition, never by animating `width`.
 - **Every loader, scene and idle animation pairs with `motion-reduce:animate-none`** and rests where it's drawn.
+- **An entrance animation on transform uses `backwards`, never `both`, on anything holding a `position: fixed` child** (17 November 2026: the panel's held `rise` made it the containing block, so the phone save bar stuck to the panel's foot with an empty band below).
 
 ## Colour and contrast
 

@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import {
   BLUR,
   GRADIENTS,
@@ -354,7 +355,7 @@ export function Toolbar({
           {share ? 'Share as sticker' : 'Download as sticker'}
         </button>
         <p className="panel__meta">
-          <span className="mono nowrap">512 × 512</span> with a white outline, for WhatsApp
+          <span className="mono nowrap">512 × 512</span>, transparent, for WhatsApp
         </p>
         {/* The size sits under Size, so this line keeps only the background wording. */}
         <p className="panel__meta">{backgroundNote}</p>
@@ -413,13 +414,19 @@ function DeviceDetails({ d, onRetryGpu }: { d: Diagnostics; onRetryGpu: () => vo
         : WHY[d.reason]
   const gpuName = d.gpu && (d.gpu.description || [d.gpu.vendor, d.gpu.architecture].filter(Boolean).join(' '))
   const canRetry = d.device === 'wasm' && (d.reason === 'gpu-failed' || d.reason === 'remembered')
+  const id = useId()
+  // A native popover: it floats over the panel instead of lengthening it, and closes on Esc or a
+  // press outside. The browser sets aria-expanded on the trigger and returns focus to it.
   return (
-    <details className="device">
-      <summary className="device__summary">
+    <div className="device">
+      <button type="button" className="device__summary" popoverTarget={id}>
         About this device
         <ChevronDownIcon width={14} height={14} className="device__chevron" />
-      </summary>
-      <div className="device__body">
+      </button>
+      <div id={id} popover="auto" className="device__body" role="dialog" aria-labelledby={`${id}-title`}>
+        <p id={`${id}-title`} className="device__title">
+          About this device
+        </p>
         <dl className="device__facts">
           <div>
             <dt>Running on</dt>
@@ -452,7 +459,7 @@ function DeviceDetails({ d, onRetryGpu }: { d: Diagnostics; onRetryGpu: () => vo
           </button>
         )}
       </div>
-    </details>
+    </div>
   )
 }
 

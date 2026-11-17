@@ -8,9 +8,11 @@ type Props = {
   height: number
   /** Sweep the divider in from the right on mount (the first time a cut-out is shown). */
   reveal: boolean
+  /** The photo's name, for screen readers. */
+  name?: string
 }
 
-export function Compare({ before, after, width, height, reveal }: Props) {
+export function Compare({ before, after, width, height, reveal, name }: Props) {
   // Only the value at mount matters: the parent flips `reveal` off right after the first render,
   // and that must not cancel a sweep already under way.
   const [revealOnMount] = useState(reveal)
@@ -30,7 +32,12 @@ export function Compare({ before, after, width, height, reveal }: Props) {
   const style = { '--pos': `${pos}%`, '--ratio': width / height, aspectRatio: `${width} / ${height}` } as CSSProperties
 
   return (
-    <div className={`compare${sweeping ? ' compare--sweeping' : ''}`} style={style}>
+    <div
+      className={`compare${sweeping ? ' compare--sweeping' : ''}`}
+      style={style}
+      role="group"
+      aria-label={name ? `${name}: original and cut-out` : undefined}
+    >
       <img className="compare__img" src={before} alt="" draggable={false} />
       <div className="compare__after">
         <img className="compare__img" src={after} alt="" draggable={false} />
@@ -54,6 +61,7 @@ export function Compare({ before, after, width, height, reveal }: Props) {
         step={0.5}
         value={pos}
         aria-label="Compare original and cut-out"
+        aria-valuetext={`${Math.round(pos)}% original`}
         onChange={(e) => {
           setSweeping(false)
           setPos(Number(e.target.value))

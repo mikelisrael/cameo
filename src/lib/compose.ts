@@ -286,16 +286,15 @@ export function exportImage(
   )
 }
 
-/** WhatsApp sticker rules: 512 px square, 16 px margin, at most 100 KB. The outline sits inside the margin. */
+/** WhatsApp sticker rules: 512 px square, 16 px margin, at most 100 KB. */
 const STICKER = 512
 const STICKER_MARGIN = 16
-const STICKER_OUTLINE = 10
 const STICKER_MAX_BYTES = 100_000
 
-/** Where the subject lands on the sticker: its box scaled to fit inside the margin and outline, centred. */
+/** Where the subject lands on the sticker: its box scaled to fit inside the margin, centred. */
 export function stickerFit(box: Box | null, photoW: number, photoH: number) {
   const r = box ?? { x: 0, y: 0, w: photoW, h: photoH }
-  const inner = STICKER - 2 * (STICKER_MARGIN + STICKER_OUTLINE)
+  const inner = STICKER - 2 * STICKER_MARGIN
   const k = Math.min(inner / r.w, inner / r.h)
   const dw = Math.max(1, Math.round(r.w * k))
   const dh = Math.max(1, Math.round(r.h * k))
@@ -315,7 +314,7 @@ function encode(canvas: HTMLCanvasElement, type: string, quality?: number): Prom
   return new Promise((resolve) => canvas.toBlob(resolve, type, quality))
 }
 
-/** A 512 px transparent sticker: the cut-out with a white outline all round, as WebP (PNG where WebP can't be made). */
+/** A 512 px transparent sticker: the cut-out centred in the margin, as WebP (PNG where WebP can't be made). */
 export async function exportSticker(original: ImageBitmap, mask: Mask, colors?: Uint8ClampedArray): Promise<Blob> {
   const l = stickerFit(photoBox(mask, original.width, original.height), original.width, original.height)
   const full = cutout(original, mask, undefined, colors)
@@ -326,31 +325,7 @@ export async function exportSticker(original: ImageBitmap, mask: Mask, colors?: 
   sc.drawImage(full, l.sx, l.sy, l.sw, l.sh, l.dx, l.dy, l.dw, l.dh)
   full.width = full.height = 0
 
-  // The subject as a flat white shape, stamped round a circle to grow the outline.
-  const white = document.createElement('canvas')
-  white.width = white.height = STICKER
-  const wc = white.getContext('2d')!
-  wc.drawImage(subject, 0, 0)
-  wc.globalCompositeOperation = 'source-in'
-  wc.fillStyle = '#ffffff'
-  wc.fillRect(0, 0, STICKER, STICKER)
-
-  const out = document.createElement('canvas')
-  out.width = out.height = STICKER
-  const oc = out.getContext('2d')!
-  const STAMPS = 24
-  for (let i = 0; i < STAMPS; i++) {
-    const a = (i / STAMPS) * Math.PI * 2
-    oc.drawImage(white, Math.cos(a) * STICKER_OUTLINE, Math.sin(a) * STICKER_OUTLINE)
-  }
-  // A smaller ring fills the gaps the outer stamps leave on thin parts.
-  for (let i = 0; i < STAMPS; i++) {
-    const a = (i / STAMPS) * Math.PI * 2
-    oc.drawImage(white, Math.cos(a) * STICKER_OUTLINE * 0.5, Math.sin(a) * STICKER_OUTLINE * 0.5)
-  }
-  oc.drawImage(subject, 0, 0)
-  white.width = white.height = 0
-  subject.width = subject.height = 0
+  const out = subject
 
   try {
     if (!(await supportsWebp())) {

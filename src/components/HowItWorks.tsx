@@ -20,7 +20,7 @@ export default function HowItWorks({ hasItems, onClose, onChoose }: Props) {
 
       <header className="how__intro">
         <h1 id="how-title" className="how__title" tabIndex={-1}>
-          How Cameo works
+          How <span className="how__brand">Cameo</span> works
         </h1>
         <p className="how__lede">
           Everything happens here, in this browser tab. This is what happens to a photo, step by step.
