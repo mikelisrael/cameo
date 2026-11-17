@@ -93,6 +93,8 @@ type Props = {
   zipping: boolean
   /** Saves (or on phones shares) the 512 px WhatsApp sticker. */
   onSticker: () => void
+  /** Opens the keyboard-shortcuts cheat sheet. */
+  onShortcuts: () => void
 }
 
 export function Toolbar({
@@ -123,6 +125,7 @@ export function Toolbar({
   onDownloadAll,
   zipping,
   onSticker,
+  onShortcuts,
 }: Props) {
   // Anything that isn't a hex colour outside the presets is a preset-like choice, not the custom colour.
   const isPreset = PRESETS.some((p) => p.value === fill) || (!!fill && !isColor(fill)) || fill === null
@@ -384,6 +387,9 @@ export function Toolbar({
           </span>
         </p>
         {diagnostics && <DeviceDetails d={diagnostics} onRetryGpu={onRetryGpu} />}
+        <button type="button" className="device__summary panel__shortcuts" onClick={onShortcuts}>
+          Keyboard shortcuts <kbd>?</kbd>
+        </button>
       </div>
     </aside>
   )

@@ -15,6 +15,7 @@ import {
   UploadIcon,
 } from './components/icons'
 import { Queue, type Item } from './components/Queue'
+import { Shortcuts } from './components/Shortcuts'
 import { Toolbar } from './components/Toolbar'
 import { paintBackground } from './lib/background'
 import { applyPatch, applyPick, type MaskPatch } from './lib/brush'
@@ -90,6 +91,7 @@ export default function App() {
   howOpen.current = how.isOpen
   const [items, setItems] = useState<Item[]>([])
   const [selected, setSelected] = useState<string | null>(null)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [fill, setFill] = useState<string | null>(null)
   const [custom, setCustom] = useState('#e0532c')
   // Not remembered between visits.
@@ -708,8 +710,7 @@ export default function App() {
   // Keyboard: undo/redo in both views; tools, brush size, zoom and hold-Space-for-original in Edit.
   const onKey = useRef<(e: KeyboardEvent, down: boolean) => void>(() => {})
   onKey.current = (e, down) => {
-    if (howOpen.current) return
-    if (!hasResult) return
+    if (howOpen.current || shortcutsOpen) return
     const t = e.target as HTMLElement | null
     // Letting go of Space ends the peek wherever the keyup lands (focus may have moved since).
     if (e.key === ' ' && !down) setShowOriginal(false)
@@ -720,6 +721,12 @@ export default function App() {
         (t instanceof HTMLInputElement && ['text', 'color', 'number'].includes(t.type))
       if (typing) return
     }
+    if (down && e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault()
+      setShortcutsOpen(true)
+      return
+    }
+    if (!hasResult) return
     const editing = view === 'edit'
     if (e.key === ' ') {
       // Space on a focused control activates it (on keyup for buttons): leave it be.
@@ -741,7 +748,34 @@ export default function App() {
       stepHistory('redo')
       return
     }
-    if (!editing || mod || e.altKey) return
+    // Save: always swallow the browser's Save page dialog.
+    if (mod && !e.altKey && !e.shiftKey && key === 's') {
+      e.preventDefault()
+      if (current?.result) void save()
+      return
+    }
+    if (mod || e.altKey) return
+    // Previous / next picture in the queue; arrows stay with radios, sliders and selects.
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.shiftKey) {
+      if (t?.closest('[role="radiogroup"], input[type="range"], select')) return
+      const i = items.findIndex((it) => it.id === selected)
+      const next = items[i + (e.key === 'ArrowRight' ? 1 : -1)]
+      if (i >= 0 && next) setSelected(next.id)
+      e.preventDefault()
+      return
+    }
+    if (!editing) {
+      if (key === 'e' && !e.shiftKey) {
+        changeView('edit')
+        e.preventDefault()
+      }
+      return
+    }
+    if (e.key === 'Escape') {
+      changeView('compare')
+      e.preventDefault()
+      return
+    }
     switch (key) {
       case 's':
         setTool('select')
@@ -1068,6 +1102,7 @@ export default function App() {
                 onDownloadAll={saveAll}
                 onSticker={saveSticker}
                 zipping={zipping}
+                onShortcuts={() => setShortcutsOpen(true)}
               />
             ) : (
               <aside className="panel panel--waiting">
@@ -1076,6 +1111,8 @@ export default function App() {
             )}
           </main>
         )}
+
+        <Shortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} isMac={isMac} />
 
         {hasItems && intake.over && (
           <div className="veil" aria-hidden="true">
