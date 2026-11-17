@@ -96,6 +96,18 @@ export function useSegmenter() {
         }
       }
     }
+    // The script itself failed (a chunk 404 after a deploy, an import error in an old browser):
+    // no message will ever come, so settle every waiting tap and show the failed state.
+    const crashed = (e: Event) => {
+      e.preventDefault()
+      if (workerRef.current !== worker) return // a worker we already replaced
+      rejectAll("The selector couldn't start. Reload the page to try again.")
+      requested.current.clear()
+      embedded.current.clear()
+      setFailed(true)
+    }
+    worker.onerror = crashed
+    worker.onmessageerror = crashed
     worker.postMessage({ type: 'load' } satisfies SegIn)
     return worker
   }, [rejectAll])
