@@ -45,11 +45,27 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 
 ## Phase 2: fix what the model got wrong (control)
 
-- [ ] Zoom and pan on the stage (wheel/pinch, double-click to fit).
-- [ ] **Erase / Restore brushes** with size and softness, painting on the mask, edge-aware "smart brush" mode that snaps to the photo's edges.
-- [ ] **Click to keep / click to remove:** point prompts with a small segmentation model (SlimSAM in transformers.js) to add or drop a whole object in one click.
-- [ ] Undo/redo for every mask edit and setting.
-- [ ] Before/after toggle (hold Space) in addition to the slider.
+- [x] Zoom and pan in Edit (wheel, pinch, + / −, Fit; double-click fits with Move). Compare keeps its slider and doesn't zoom.
+- [x] **Erase / Restore brushes** with size and softness on the mask (`src/lib/brush.ts`, `src/components/Editor.tsx`). "Smart edges" snaps a stroke to the photo: colours under the stroke's centre vs. the kept/removed colours around it, then a colour guided filter; erase never adds, restore never removes.
+- [ ] **Click to keep / click to remove** (next, its own run: a second model download and a worker protocol change): point prompts with a small segmentation model (SlimSAM in transformers.js) to add or drop a whole object in one click.
+- [x] Undo/redo for every brush stroke, background change and Reset (`src/lib/history.ts`, per image, capped at 60 steps / 150 MB). Ctrl/⌘+Z, Ctrl/⌘+Shift+Z, Ctrl+Y.
+- [x] Hold Space, or press and hold Before, to see the original in Edit. Keys in Edit: E erase, R restore, V/H move, [ ] size, + − 0 zoom.
+- [ ] iOS Safari caps one canvas at about 16.7 MP; the 24 MP working cap can pass it (export and the editor both draw at full mask size). Lower the cap on iOS, or tile the export.
+- [ ] Optional from review: Edit → Compare after edits shows the previous cut-out for a moment until the new one is drawn; gate Compare on the current version and show the editor's frame meanwhile.
+
+## How it works (Israel, 17 November 2026: "intuitive and responsive, alive and not ai slop")
+
+- [ ] A "How it works" page, reached from the header and the footer: what happens to a photo, step by step (it opens on your device, the model finds the subject, the edges are cleaned, you fix with brushes, you download), shown with the app's own drawing, not stock icons. Says plainly what's stored (the model, two settings) and what never leaves the device. Alive means it moves as you scroll or tap, at phone width first; reduced motion rests at the end state. No feature grid, no "AI-powered ✨".
+
+## Speed (Israel, 17 November 2026: do 1 and 5 now, keep the rest)
+
+- [ ] **Multithreaded WASM:** send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy` (try `credentialless` first, so the Hugging Face and CDN downloads keep working) from a `vercel.json`, so the page is cross-origin isolated and ONNX Runtime's CPU path uses several threads instead of one (today there is no `vercel.json`, so it runs single-threaded). Check `crossOriginIsolated` and the thread count in "About this device"; expect 2–4× on the CPU path.
+- [ ] **Warm start:** begin the model download and session setup while the drop screen shows, so the first photo doesn't wait for it.
+- Saved for later, best first:
+  - [ ] An int8 (quantized) CPU model made with ONNX Runtime's tools and hosted on Hugging Face: about 2–3× faster on WASM and a third of the download; judge the edges on `?bench` before switching.
+  - [ ] Run the Phase 1 edge refinement as WebGPU compute (saves ~2–3 s on 12 MP).
+  - [ ] Batch overlap: decode the next photo while the model runs on the current one.
+  - [ ] More machines on the GPU path: fix each fallback reason "About this device" reports.
 
 ## Phase 3: a picture ready for where it's going (output)
 

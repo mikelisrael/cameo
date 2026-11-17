@@ -117,3 +117,39 @@ export const ChevronsIcon = (p: P) => (
 export const Spinner = ({ className = '' }: { className?: string }) => (
   <span className={`spinner ${className}`} aria-hidden="true" />
 )
+
+export const UndoIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M9 7 4.5 11.5 9 16" />
+    <path d="M4.5 11.5H15a4.5 4.5 0 0 1 0 9h-3" />
+  </svg>
+)
+
+export const RedoIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="m15 7 4.5 4.5L15 16" />
+    <path d="M19.5 11.5H9a4.5 4.5 0 0 0 0 9h3" />
+  </svg>
+)
+
+export const HandIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M8 12V5.5a1.5 1.5 0 0 1 3 0V11m0-1V4.5a1.5 1.5 0 0 1 3 0V11m0-4.5a1.5 1.5 0 0 1 3 0V14" />
+    <path d="M8 12 6.4 10.4a1.5 1.5 0 0 0-2.2 2L8.5 19a4 4 0 0 0 3.4 2h2.2a4 4 0 0 0 4-4v-3a1.5 1.5 0 0 0-3 0" />
+  </svg>
+)
+
+export const EraserIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="m8 20-4.3-4.3a2 2 0 0 1 0-2.8L13 3.6a2 2 0 0 1 2.8 0L20.4 8.2a2 2 0 0 1 0 2.8L11 20.4" />
+    <path d="M8 20h12M7 10.5l6.5 6.5" />
+  </svg>
+)
+
+export const BrushIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M14.5 5.5 19 10 11 18l-4.5-4.5z" />
+    <path d="m16.5 3.5 4 4" />
+    <path d="M6.5 13.5C4.5 14 4 16 4 18c0 1.5-.5 2-1 2.5 3 .5 6.5-.5 7.5-3" />
+  </svg>
+)

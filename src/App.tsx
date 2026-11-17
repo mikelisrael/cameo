@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { Compare } from './components/Compare'
+import { EditBar } from './components/EditBar'
+import { Editor, type BrushSettings, type EditorHandle, type Tool } from './components/Editor'
 import { useFileIntake } from './components/DropZone'
 import {
   AlertIcon,
@@ -14,14 +16,26 @@ import {
 } from './components/icons'
 import { Queue, type Item } from './components/Queue'
 import { Toolbar } from './components/Toolbar'
+import { applyPatch, type MaskPatch } from './lib/brush'
 import { cutout, downloadName, exportPng } from './lib/compose'
+import { isDirty, newHistory, push, redo, undo, type History } from './lib/history'
+import type { Mask } from './lib/protocol'
 import { useRemover, type Result, type Status } from './lib/useRemover'
 import { useTheme } from './lib/useTheme'
 
 /** A 1x1 transparent GIF, shown until a HEIC photo has been decoded. */
 const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=='
 
-type Entry = { file: File; url: string; result?: Result }
+type Entry = {
+  file: File
+  url: string
+  result?: Result
+  /** The mask as edited; made (a copy of the model's) the first time Edit opens. */
+  edited?: Mask
+  history: History
+}
+
+type View = 'compare' | 'edit'
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent)
 
@@ -39,6 +53,12 @@ const shareFiles = (() => {
   }
 })()
 
+const ACTIVATABLE =
+  'button, [role="radio"], [role="switch"], a[href], summary, input[type="checkbox"], input[type="radio"], input[type="range"]'
+
+/** A control Space presses itself, so the Edit view's hold-Space-for-original must not touch it. */
+const isActivatable = (t: EventTarget | null) => t instanceof Element && !!t.closest(ACTIVATABLE)
+
 export default function App() {
   const { status, progress, diagnostics, fellBack, error, process, retryGpu } = useRemover()
   const theme = useTheme()
@@ -48,7 +68,24 @@ export default function App() {
   const [custom, setCustom] = useState('#e0532c')
   // The selected cut-out, rendered at full size with the chosen background: shown on stage and
   // saved as is, so saving needs no async work (iOS only allows share() straight from a tap).
-  const [after, setAfter] = useState<{ id: string; fill: string | null; url: string; blob: Blob } | null>(null)
+  const [after, setAfter] = useState<{
+    id: string
+    fill: string | null
+    version: number
+    url: string
+    blob: Blob
+  } | null>(null)
+  const [view, setView] = useState<View>('compare')
+  const [tool, setTool] = useState<Tool>('erase')
+  const [brush, setBrush] = useState<BrushSettings>({ size: 40, softness: 0.25, smart: true })
+  const [showOriginal, setShowOriginal] = useState(false)
+  // Bumped on every mask change (strokes, undo, redo, reset): the cut-out is rebuilt from it.
+  const [editVersion, setEditVersion] = useState(0)
+  // Bumped only when the mask changed outside the editor's own strokes, so it redraws.
+  const [editorVersion, setEditorVersion] = useState(0)
+  const [, rerender] = useReducer((n: number) => n + 1, 0)
+  const editorRef = useRef<EditorHandle>(null)
+  const fromPicker = useRef(false)
   const [notice, setNotice] = useState<string | null>(null)
   const entries = useRef(new Map<string, Entry>())
   const revealed = useRef(new Set<string>())
@@ -65,7 +102,7 @@ export default function App() {
         // HEIC can't be shown by most browsers: it gets its thumbnail once decoded.
         const url =
           /\.(heic|heif)$/i.test(file.name) || /^image\/hei[cf]$/.test(file.type) ? '' : URL.createObjectURL(file)
-        entries.current.set(id, { file, url })
+        entries.current.set(id, { file, url, history: newHistory() })
         setItems((list) => [...list, { id, name: file.name, state: 'queued', thumb: url || BLANK }])
         // Skipped if removed before its turn, so it doesn't hold up the images after it.
         process(
@@ -124,6 +161,7 @@ export default function App() {
     setSelected(null)
     setAfter(null)
     setFill(null)
+    setView('compare')
   }, [])
 
   const onReject = useCallback((names: string[]) => {
@@ -147,20 +185,34 @@ export default function App() {
   const selectedDone = selectedItem?.state === 'done'
   useEffect(() => {
     const id = selected
-    const r = id ? entries.current.get(id)?.result : undefined
-    if (!id || !r) return
-    let url: string | null = null
+    const e = id ? entries.current.get(id) : undefined
+    const r = e?.result
+    if (!id || !r) {
+      setAfter(null)
+      return
+    }
+    // Not while editing: every stroke would re-encode a full-size PNG nobody is looking at.
+    if (view === 'edit') return
     let cancelled = false
-    cutout(r.original, r.mask, fill ?? undefined, r.colors).toBlob((blob) => {
+    const version = editVersion
+    cutout(r.original, e.edited ?? r.mask, fill ?? undefined, r.colors).toBlob((blob) => {
+      // A superseded run never makes a URL, so there is nothing to revoke for it.
       if (cancelled || !blob) return
-      url = URL.createObjectURL(blob)
-      setAfter({ id, fill, url, blob })
+      setAfter({ id, fill, version, url: URL.createObjectURL(blob), blob })
     }, 'image/png')
     return () => {
       cancelled = true
-      if (url) URL.revokeObjectURL(url)
     }
-  }, [selected, selectedDone, fill])
+  }, [selected, selectedDone, fill, editVersion, view])
+
+  // The displayed URL stays valid until a newer one has replaced it (or it is cleared, or the app
+  // unmounts): this cleanup runs after the replacement has committed.
+  useEffect(
+    () => () => {
+      if (after) URL.revokeObjectURL(after.url)
+    },
+    [after],
+  )
 
   const save = useCallback(async () => {
     const e = selected ? entries.current.get(selected) : undefined
@@ -168,7 +220,8 @@ export default function App() {
     const name = downloadName(e.file.name)
     // The pre-rendered PNG counts only once it has the background picked now (a swatch tap
     // re-renders it, which takes a moment on a large photo).
-    const ready = after && after.id === selected && after.fill === fill ? after.blob : null
+    const ready =
+      after && after.id === selected && after.fill === fill && after.version === editVersion ? after.blob : null
     if (shareFiles && ready) {
       try {
         await navigator.share({ files: [new File([ready], name, { type: 'image/png' })] })
@@ -178,16 +231,182 @@ export default function App() {
         // Anything else (not allowed, unsupported): fall back to a download.
       }
     }
-    const blob = ready ?? (await exportPng(e.result.original, e.result.mask, fill ?? undefined, e.result.colors))
+    const blob =
+      ready ?? (await exportPng(e.result.original, e.edited ?? e.result.mask, fill ?? undefined, e.result.colors))
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = name
     a.click()
     setTimeout(() => URL.revokeObjectURL(a.href), 1000)
-  }, [selected, fill, after])
+  }, [selected, fill, after, editVersion])
 
   const current = selected ? entries.current.get(selected) : undefined
-  const showCompare = !!(current?.result && after?.id === selected)
+  const hasResult = !!current?.result
+
+  // Another image: back to Compare.
+  useEffect(() => {
+    setView('compare')
+    setShowOriginal(false)
+  }, [selected])
+
+  const changeView = useCallback(
+    (next: View) => {
+      const e = selected ? entries.current.get(selected) : undefined
+      if (!e?.result) return
+      if (next === 'edit' && !e.edited) {
+        const m = e.result.mask
+        e.edited = { width: m.width, height: m.height, data: new Uint8ClampedArray(m.data) }
+      }
+      setView(next)
+      setShowOriginal(false)
+    },
+    [selected],
+  )
+
+  const onStroke = useCallback(
+    (p: MaskPatch) => {
+      const e = selected ? entries.current.get(selected) : undefined
+      if (!e) return
+      push(e.history, { kind: 'mask', patch: p })
+      setEditVersion((v) => v + 1)
+    },
+    [selected],
+  )
+
+  const stepHistory = useCallback(
+    (dir: 'undo' | 'redo') => {
+      const e = selected ? entries.current.get(selected) : undefined
+      if (!e?.result) return
+      const step = (dir === 'undo' ? undo : redo)(e.history)
+      if (!step) return
+      if (step.kind === 'fill') {
+        setFill(dir === 'undo' ? step.from : step.to)
+      } else if (e.edited) {
+        if (step.kind === 'mask')
+          applyPatch(e.edited.data, e.edited.width, step.patch, dir === 'undo' ? 'before' : 'after')
+        else e.edited.data.set(dir === 'undo' ? step.before : step.after)
+        setEditVersion((v) => v + 1)
+        setEditorVersion((v) => v + 1)
+      }
+      rerender()
+    },
+    [selected],
+  )
+
+  const changeFill = useCallback(
+    (next: string | null) => {
+      const e = selected ? entries.current.get(selected) : undefined
+      // The custom colour picker fires onCustom and onFill together, on every drag tick: not history.
+      if (e?.result && next !== fill && !fromPicker.current) push(e.history, { kind: 'fill', from: fill, to: next })
+      setFill(next)
+    },
+    [selected, fill],
+  )
+
+  const changeCustom = useCallback((hex: string) => {
+    fromPicker.current = true
+    queueMicrotask(() => {
+      fromPicker.current = false
+    })
+    setCustom(hex)
+  }, [])
+
+  const resetEdits = useCallback(() => {
+    const e = selected ? entries.current.get(selected) : undefined
+    if (!e?.result || !e.edited) return
+    const before = new Uint8ClampedArray(e.edited.data)
+    const after = new Uint8ClampedArray(e.result.mask.data)
+    e.edited.data.set(after)
+    push(e.history, { kind: 'reset', before, after })
+    setEditVersion((v) => v + 1)
+    setEditorVersion((v) => v + 1)
+  }, [selected])
+
+  // Keyboard: undo/redo in both views; tools, brush size, zoom and hold-Space-for-original in Edit.
+  const onKey = useRef<(e: KeyboardEvent, down: boolean) => void>(() => {})
+  onKey.current = (e, down) => {
+    if (!hasResult) return
+    const t = e.target as HTMLElement | null
+    // Letting go of Space ends the peek wherever the keyup lands (focus may have moved since).
+    if (e.key === ' ' && !down) setShowOriginal(false)
+    if (t) {
+      const typing =
+        t instanceof HTMLTextAreaElement ||
+        t.isContentEditable ||
+        (t instanceof HTMLInputElement && ['text', 'color', 'number'].includes(t.type))
+      if (typing) return
+    }
+    const editing = view === 'edit'
+    if (e.key === ' ') {
+      // Space on a focused control activates it (on keyup for buttons): leave it be.
+      if (!editing || isActivatable(t)) return
+      e.preventDefault()
+      if (down && !e.repeat) setShowOriginal(true)
+      return
+    }
+    if (!down) return
+    const mod = e.ctrlKey || e.metaKey
+    const key = e.key.toLowerCase()
+    if (mod && !e.altKey && key === 'z') {
+      e.preventDefault()
+      stepHistory(e.shiftKey ? 'redo' : 'undo')
+      return
+    }
+    if (mod && !e.altKey && !e.shiftKey && key === 'y') {
+      e.preventDefault()
+      stepHistory('redo')
+      return
+    }
+    if (!editing || mod || e.altKey) return
+    switch (key) {
+      case 'e':
+        setTool('erase')
+        break
+      case 'r':
+        setTool('restore')
+        break
+      case 'v':
+      case 'h':
+        setTool('move')
+        break
+      case '[':
+      case ']': {
+        const dir = key === ']' ? 1 : -1
+        setBrush((b) => {
+          const d = Math.max(1, Math.round(b.size * 0.1))
+          return { ...b, size: Math.min(200, Math.max(4, b.size + dir * d)) }
+        })
+        break
+      }
+      case '+':
+      case '=':
+        editorRef.current?.zoomIn()
+        break
+      case '-':
+        editorRef.current?.zoomOut()
+        break
+      case '0':
+        editorRef.current?.fit()
+        break
+      default:
+        return
+    }
+    e.preventDefault()
+  }
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => onKey.current(e, true)
+    const up = (e: KeyboardEvent) => onKey.current(e, false)
+    const blur = () => setShowOriginal(false)
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    window.addEventListener('blur', blur)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+      window.removeEventListener('blur', blur)
+    }
+  }, [])
+  const showCompare = view === 'compare' && !!(current?.result && after?.id === selected)
   const reveal = !!selected && showCompare && !revealed.current.has(selected)
   useEffect(() => {
     if (showCompare && selected) revealed.current.add(selected)
@@ -296,8 +515,39 @@ export default function App() {
       ) : (
         <main className="workspace">
           <section className="stage-col" aria-label="Preview">
+            {current?.result && (
+              <EditBar
+                view={view}
+                onView={changeView}
+                tool={tool}
+                onTool={setTool}
+                brush={brush}
+                onBrush={setBrush}
+                canUndo={current.history.done.length > 0}
+                canRedo={current.history.undone.length > 0}
+                onUndo={() => stepHistory('undo')}
+                onRedo={() => stepHistory('redo')}
+                canReset={!!current.edited && isDirty(current.history)}
+                onReset={resetEdits}
+              />
+            )}
             <div className="sheet stage">
-              {showCompare && current?.result && after ? (
+              {view === 'edit' && current?.result && current.edited ? (
+                <Editor
+                  key={selected}
+                  ref={editorRef}
+                  original={current.result.original}
+                  mask={current.edited}
+                  colors={current.result.colors}
+                  fill={fill}
+                  tool={tool}
+                  brush={brush}
+                  showOriginal={showOriginal}
+                  onShowOriginal={setShowOriginal}
+                  version={editorVersion}
+                  onStroke={onStroke}
+                />
+              ) : showCompare && current?.result && after ? (
                 <Compare
                   key={selected}
                   before={current.url}
@@ -321,12 +571,12 @@ export default function App() {
             <Queue items={items} selected={selected} onSelect={setSelected} onRemove={remove} onAdd={intake.open} />
           </section>
 
-          {showCompare && current?.result ? (
+          {current?.result ? (
             <Toolbar
               fill={fill}
               custom={custom}
-              onFill={setFill}
-              onCustom={setCustom}
+              onFill={changeFill}
+              onCustom={changeCustom}
               onDownload={save}
               size={{ width: current.result.original.width, height: current.result.original.height }}
               diagnostics={diagnostics}
