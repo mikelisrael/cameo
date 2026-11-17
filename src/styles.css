@@ -364,7 +364,7 @@ kbd {
   border-radius: 0.22em;
   background: var(--brand-soft);
   color: var(--brand-text);
-  transform: rotate(-2deg);
+  transform: rotate(-2deg) translateY(-0.08em);
   animation: lift 700ms 200ms var(--ease) both;
 }
 

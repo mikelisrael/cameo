@@ -39,6 +39,7 @@ type Mode = 'none' | 'pan' | 'paint' | 'pinch'
 const PAD = 32
 const KEEP = 0.25
 const STEP = 1.5
+const GLIDE_MS = 240
 
 const svg = (p: SVGProps<SVGSVGElement>) => ({
   width: 16,
@@ -155,26 +156,66 @@ export function Editor({
     }
   }, [])
 
-  const clampPan = useCallback(() => {
+  // A glide eases the view to a target for discrete zooms (buttons, keys, wheel notches, fit).
+  // Direct manipulation (pan, pinch, trackpad) stays 1:1 and cancels any glide.
+  const glide = useRef<{ raf: number; to: View | null }>({ raf: 0, to: null })
+  const stopGlide = useCallback(() => {
+    cancelAnimationFrame(glide.current.raf)
+    glide.current = { raf: 0, to: null }
+  }, [])
+  const glideTo = useCallback(
+    (to: View) => {
+      stopGlide()
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        view.current = to
+        applyView()
+        return
+      }
+      const from = { ...view.current }
+      const t0 = performance.now()
+      const step = (now: number) => {
+        const t = Math.min(1, (now - t0) / GLIDE_MS)
+        const e = 1 - (1 - t) ** 3
+        view.current = {
+          s: from.s * (to.s / from.s) ** e,
+          x: from.x + (to.x - from.x) * e,
+          y: from.y + (to.y - from.y) * e,
+        }
+        applyView()
+        glide.current.raf = t < 1 ? requestAnimationFrame(step) : 0
+        if (t === 1) glide.current.to = null
+      }
+      glide.current = { raf: requestAnimationFrame(step), to }
+    },
+    [applyView, stopGlide],
+  )
+
+  const clampPan = useCallback((v: View = view.current) => {
     const { vw, vh, mw, mh } = geo.current
-    const v = view.current
     const iw = mw * v.s
     const ih = mh * v.s
     v.x = Math.min(vw - KEEP * iw, Math.max(-(1 - KEEP) * iw, v.x))
     v.y = Math.min(vh - KEEP * ih, Math.max(-(1 - KEEP) * ih, v.y))
   }, [])
 
-  const fit = useCallback(() => {
-    const { vw, vh, mw, mh } = geo.current
-    const { fit: s } = limits()
-    view.current = { s, x: (vw - mw * s) / 2, y: (vh - mh * s) / 2 }
-    touched.current = false
-    applyView()
-  }, [applyView])
+  const fit = useCallback(
+    (animate = false) => {
+      const { vw, vh, mw, mh } = geo.current
+      const { fit: s } = limits()
+      const to = { s, x: (vw - mw * s) / 2, y: (vh - mh * s) / 2 }
+      touched.current = false
+      if (animate) return glideTo(to)
+      stopGlide()
+      view.current = to
+      applyView()
+    },
+    [applyView, glideTo, stopGlide],
+  )
 
   const zoomAt = useCallback(
-    (cx: number, cy: number, factor: number) => {
-      const v = view.current
+    (cx: number, cy: number, factor: number, animate = false) => {
+      // Stacked discrete zooms build on where the running glide is heading, not where it is now.
+      const v = { ...(animate && glide.current.to ? glide.current.to : view.current) }
       const { min, max } = limits()
       const s = Math.min(max, Math.max(min, v.s * factor))
       const k = s / v.s
@@ -182,18 +223,21 @@ export function Editor({
       v.y = cy - (cy - v.y) * k
       v.s = s
       touched.current = true
-      clampPan()
+      clampPan(v)
+      if (animate) return glideTo(v)
+      stopGlide()
+      view.current = v
       applyView()
     },
-    [applyView, clampPan],
+    [applyView, clampPan, glideTo, stopGlide],
   )
 
   useImperativeHandle(
     ref,
     () => ({
-      zoomIn: () => zoomAt(geo.current.vw / 2, geo.current.vh / 2, STEP),
-      zoomOut: () => zoomAt(geo.current.vw / 2, geo.current.vh / 2, 1 / STEP),
-      fit,
+      zoomIn: () => zoomAt(geo.current.vw / 2, geo.current.vh / 2, STEP, true),
+      zoomOut: () => zoomAt(geo.current.vw / 2, geo.current.vh / 2, 1 / STEP, true),
+      fit: () => fit(true),
     }),
     [zoomAt, fit],
   )
@@ -243,7 +287,10 @@ export function Editor({
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       const r = el.getBoundingClientRect()
-      zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)))
+      // A mouse wheel moves in notches (line mode or big pixel steps): glide those. Trackpads stay direct.
+      const notch = !e.ctrlKey && (e.deltaMode !== 0 || Math.abs(e.deltaY) >= 50)
+      const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY
+      zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.0015)), notch)
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
@@ -323,6 +370,7 @@ export function Editor({
     () => () => {
       cancelAnimationFrame(flushRaf.current)
       cancelAnimationFrame(pctRaf.current)
+      cancelAnimationFrame(glide.current.raf)
     },
     [],
   )
@@ -392,6 +440,7 @@ export function Editor({
     const isPrimary = e.button === 0
     if (e.pointerType === 'mouse' && !isPrimary && e.button !== 1) return
     if (e.button === 1) e.preventDefault()
+    stopGlide()
     e.currentTarget.setPointerCapture(e.pointerId)
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     trackHover(e, true)
@@ -514,7 +563,7 @@ export function Editor({
         syncRing()
       }}
       onDoubleClick={() => {
-        if (tool === 'move' || tool === 'select') fit()
+        if (tool === 'move' || tool === 'select') fit(true)
       }}
     >
       <div ref={bgRef} className="editor__bg" style={bgStyle} />
@@ -530,7 +579,7 @@ export function Editor({
           type="button"
           className="button button--quiet button--icon button--sm"
           aria-label="Zoom out"
-          onClick={() => zoomAt(geo.current.vw / 2, geo.current.vh / 2, 1 / STEP)}
+          onClick={() => zoomAt(geo.current.vw / 2, geo.current.vh / 2, 1 / STEP, true)}
         >
           <MinusGlyph />
         </button>
@@ -539,11 +588,16 @@ export function Editor({
           type="button"
           className="button button--quiet button--icon button--sm"
           aria-label="Zoom in"
-          onClick={() => zoomAt(geo.current.vw / 2, geo.current.vh / 2, STEP)}
+          onClick={() => zoomAt(geo.current.vw / 2, geo.current.vh / 2, STEP, true)}
         >
           <PlusGlyph />
         </button>
-        <button type="button" className="button button--quiet button--sm" aria-label="Fit to screen" onClick={fit}>
+        <button
+          type="button"
+          className="button button--quiet button--sm"
+          aria-label="Fit to screen"
+          onClick={() => fit(true)}
+        >
           Fit
         </button>
       </div>
