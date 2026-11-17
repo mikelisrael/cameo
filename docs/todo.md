@@ -82,7 +82,8 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 
 ## Phase 4: feels like an app (polish)
 
-- [ ] Works offline once the model is cached (service worker; the installable manifest lands in Phase 0).
+- [x] Works offline once the model is cached (vite-plugin-pwa: app shell precached, fonts and the ORT runtime cached on use; a new version waits until every Cameo tab is closed, never swapped under an open one).
+- [ ] Workers have no `onerror`: a worker script that fails to load leaves the cut-out stuck with no message; surface it as the app's error state.
 - [ ] Pinch-zoom on the stage, swipe between images, haptic tick on Android when a cut-out finishes.
 - [ ] Keyboard shortcuts (paste, download, next/previous image, brush keys) with a cheat sheet.
 - [ ] Accessibility audit (screen reader pass through the whole flow, focus order, reduced motion).
