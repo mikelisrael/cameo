@@ -1,10 +1,26 @@
-import type { Format } from '../lib/compose'
+import type { Format, Frame } from '../lib/compose'
 import type { Diagnostics } from '../lib/protocol'
 import type { Item } from './Queue'
 import { CheckIcon, ChevronDownIcon, DownloadIcon, InfoIcon, LockIcon, ShareIcon, Spinner } from './icons'
 import { Segmented } from './Segmented'
 
 const LABEL: Record<Format, string> = { png: 'PNG', webp: 'WebP', jpg: 'JPG' }
+
+const SIZES: { value: Frame; label: string }[] = [
+  { value: 'photo', label: 'Whole' },
+  { value: 'subject', label: 'Fit' },
+  { value: 'square', label: '1:1' },
+  { value: 'portrait', label: '4:5' },
+  { value: 'story', label: '9:16' },
+]
+
+const FRAME_NOTE: Record<Frame, string> = {
+  photo: 'The whole photo',
+  subject: 'Fitted to the subject',
+  square: 'Square, for shops and marketplaces',
+  portrait: 'Instagram post',
+  story: 'Story or WhatsApp status',
+}
 
 /** Backgrounds offered for the cut-out; `null` is transparent. These are content, not chrome. */
 const PRESETS: { label: string; value: string | null }[] = [
@@ -22,7 +38,12 @@ type Props = {
   onFill: (fill: string | null) => void
   onCustom: (hex: string) => void
   onDownload: () => void
-  size: { width: number; height: number } | null
+  frame: Frame
+  onFrame: (frame: Frame) => void
+  /** Object URL of the framed image when it is ready; null while it renders. */
+  preview: string | null
+  /** Pixel size of what will be downloaded; null while a framed size is still rendering. */
+  outSize: { width: number; height: number } | null
   diagnostics: Diagnostics | null
   /** This session's GPU couldn't run the model, so the work moved to the processor. */
   fellBack: boolean
@@ -47,7 +68,10 @@ export function Toolbar({
   onFill,
   onCustom,
   onDownload,
-  size,
+  frame,
+  onFrame,
+  preview,
+  outSize,
   diagnostics,
   fellBack,
   onRetryGpu,
@@ -127,6 +151,29 @@ export function Toolbar({
             <span>JPG has no transparency, so it gets a white background.</span>
           </p>
         )}
+        <h2 className="panel__title" id="size-label">
+          Size
+        </h2>
+        <Segmented className="seg seg--block" label="Size" options={SIZES} value={frame} onChange={onFrame} />
+        <p className="panel__meta">
+          {FRAME_NOTE[frame]}
+          {outSize && (
+            <>
+              {' · '}
+              <span className="nowrap">
+                <span className="mono">
+                  {outSize.width} × {outSize.height}
+                </span>{' '}
+                px
+              </span>
+            </>
+          )}
+        </p>
+        {frame !== 'photo' && (
+          <div className="panel__preview">
+            {preview ? <img src={preview} alt="What you'll download" draggable={false} /> : <Spinner />}
+          </div>
+        )}
         {/* On phones this becomes a bar pinned to the bottom of the screen, in thumb reach. */}
         <div className="panel__save">
           <button type="button" className="button button--primary button--block" onClick={onDownload}>
@@ -148,14 +195,10 @@ export function Toolbar({
             {zipping && <Spinner />}
           </button>
         )}
-        {size && (
-          <p className="panel__meta">
-            <span className="mono">
-              {size.width} × {size.height}
-            </span>{' '}
-            px · {fill ? 'solid background' : format === 'jpg' ? 'white background' : 'transparent'}
-          </p>
-        )}
+        {/* The size sits under Size, so this line keeps only the background wording. */}
+        <p className="panel__meta">
+          {fill ? 'Solid background' : format === 'jpg' ? 'White background' : 'Transparent background'}
+        </p>
         {scaled && (
           <p className="panel__notice">
             <InfoIcon width={15} height={15} />

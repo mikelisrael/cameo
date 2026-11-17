@@ -17,7 +17,7 @@ import {
 import { Queue, type Item } from './components/Queue'
 import { Toolbar } from './components/Toolbar'
 import { applyPatch, applyPick, type MaskPatch } from './lib/brush'
-import { downloadName, exportImage, supportsWebp, zipCutouts, type Format } from './lib/compose'
+import { downloadName, exportImage, frameSize, supportsWebp, zipCutouts, type Format, type Frame } from './lib/compose'
 import { isDirty, newHistory, push, redo, undo, type History } from './lib/history'
 import type { Mask } from './lib/protocol'
 import { useHowItWorks } from './lib/useHowItWorks'
@@ -76,6 +76,7 @@ export default function App() {
   const [custom, setCustom] = useState('#e0532c')
   // Not remembered between visits.
   const [format, setFormat] = useState<Format>('png')
+  const [frame, setFrame] = useState<Frame>('photo')
   const [webp, setWebp] = useState(false)
   const [zipping, setZipping] = useState(false)
   // The selected cut-out, rendered at full size with the chosen background: shown on stage and
@@ -87,6 +88,18 @@ export default function App() {
     format: Format
     url: string
     blob: Blob
+  } | null>(null)
+  // The same cut-out in the chosen size (Subject or a preset): the panel previews it and saving uses it.
+  const [framed, setFramed] = useState<{
+    id: string
+    fill: string | null
+    version: number
+    format: Format
+    frame: Frame
+    url: string
+    blob: Blob
+    width: number
+    height: number
   } | null>(null)
   const [view, setView] = useState<View>('compare')
   const [tool, setTool] = useState<Tool>('erase')
@@ -180,6 +193,7 @@ export default function App() {
     setItems([])
     setSelected(null)
     setAfter(null)
+    setFramed(null)
     setFill(null)
     setView('compare')
   }, [])
@@ -250,6 +264,38 @@ export default function App() {
     [after],
   )
 
+  // The chosen size, rendered ahead like `after`. Photo needs none: `after` is the whole photo.
+  useEffect(() => {
+    const id = selected
+    const e = id ? entries.current.get(id) : undefined
+    const r = e?.result
+    if (!id || !r || frame === 'photo') {
+      setFramed(null)
+      return
+    }
+    if (view === 'edit') return
+    let cancelled = false
+    const version = editVersion
+    const mask = e.edited ?? r.mask
+    exportImage(r.original, mask, fill ?? undefined, r.colors, format, frame)
+      .then((blob) => {
+        if (cancelled) return
+        const { width, height } = frameSize(frame, r.original, mask)
+        setFramed({ id, fill, version, format, frame, url: URL.createObjectURL(blob), blob, width, height })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [selected, selectedDone, fill, editVersion, view, format, frame])
+
+  useEffect(
+    () => () => {
+      if (framed) URL.revokeObjectURL(framed.url)
+    },
+    [framed],
+  )
+
   // WebP is offered only where the browser really encodes it.
   useEffect(() => {
     supportsWebp().then(setWebp)
@@ -265,9 +311,22 @@ export default function App() {
     // The pre-rendered image counts only once it has the background and format picked now (a
     // swatch tap or format change re-renders it, which takes a moment on a large photo).
     const ready =
-      after && after.id === selected && after.fill === fill && after.version === editVersion && after.format === format
-        ? after.blob
-        : null
+      frame === 'photo'
+        ? after &&
+          after.id === selected &&
+          after.fill === fill &&
+          after.version === editVersion &&
+          after.format === format
+          ? after.blob
+          : null
+        : framed &&
+            framed.id === selected &&
+            framed.fill === fill &&
+            framed.version === editVersion &&
+            framed.format === format &&
+            framed.frame === frame
+          ? framed.blob
+          : null
     if (shareFiles && ready) {
       try {
         await navigator.share({ files: [new File([ready], name, { type: ready.type })] })
@@ -279,13 +338,20 @@ export default function App() {
     }
     const blob =
       ready ??
-      (await exportImage(e.result.original, e.edited ?? e.result.mask, fill ?? undefined, e.result.colors, format))
+      (await exportImage(
+        e.result.original,
+        e.edited ?? e.result.mask,
+        fill ?? undefined,
+        e.result.colors,
+        format,
+        frame,
+      ))
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = name
     a.click()
     setTimeout(() => URL.revokeObjectURL(a.href), 1000)
-  }, [selected, fill, after, editVersion, format])
+  }, [selected, fill, after, framed, editVersion, format, frame])
 
   const doneCount = items.filter((i) => i.state === 'done').length
 
@@ -304,6 +370,7 @@ export default function App() {
           fill ?? undefined,
           e.result.colors,
           format,
+          frame,
         )
         files.push({ name: downloadName(e.file.name, format), blob })
       }
@@ -318,7 +385,7 @@ export default function App() {
     } finally {
       setZipping(false)
     }
-  }, [zipping, items, fill, format])
+  }, [zipping, items, fill, format, frame])
 
   const current = selected ? entries.current.get(selected) : undefined
   const hasResult = !!current?.result
@@ -538,6 +605,19 @@ export default function App() {
     if (showCompare && selected) revealed.current.add(selected)
   }, [showCompare, selected])
 
+  // The framed render counts for the panel only once it matches everything picked now.
+  const framedReady =
+    framed !== null &&
+    frame !== 'photo' &&
+    framed.id === selected &&
+    framed.fill === fill &&
+    framed.version === editVersion &&
+    framed.format === format &&
+    framed.frame === frame
+  const photoSize = current?.result
+    ? { width: current.result.original.width, height: current.result.original.height }
+    : null
+
   const pending = items.find((i) => i.state === 'processing') ?? items.find((i) => i.state === 'queued')
   const hasItems = items.length > 0
 
@@ -753,7 +833,6 @@ export default function App() {
                 onFill={changeFill}
                 onCustom={changeCustom}
                 onDownload={save}
-                size={{ width: current.result.original.width, height: current.result.original.height }}
                 diagnostics={diagnostics}
                 fellBack={fellBack}
                 onRetryGpu={retryGpu}
@@ -761,6 +840,12 @@ export default function App() {
                 share={shareFiles}
                 format={format}
                 onFormat={setFormat}
+                frame={frame}
+                onFrame={setFrame}
+                preview={framedReady ? framed.url : null}
+                outSize={
+                  frame === 'photo' ? photoSize : framedReady ? { width: framed.width, height: framed.height } : null
+                }
                 webp={webp}
                 doneCount={doneCount}
                 onDownloadAll={saveAll}

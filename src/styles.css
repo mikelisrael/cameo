@@ -993,6 +993,27 @@ kbd {
   color: var(--ink-2);
 }
 
+/* What the Size choice will download: on the transparency checkerboard, so cut edges read. */
+.panel__preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background-color: var(--check-a);
+  background-image: conic-gradient(var(--check-b) 25%, transparent 0 50%, var(--check-b) 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+
+.panel__preview img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
 /* The panel's foot: where the photo is processed, and what this device is doing about it. */
 .panel__foot {
   display: flex;
@@ -2018,6 +2039,19 @@ kbd {
 .seg--block {
   display: grid;
   width: 100%;
+  /* Truly equal options: a plain 1fr lets a long label ("Subject") widen its own column. */
+  grid-auto-columns: minmax(0, 1fr);
+}
+
+.seg--block .seg__btn {
+  min-width: 0;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+/* A size stays whole: "1080 × 1920 px" never leaves its "px" on a line of its own. */
+.nowrap {
+  white-space: nowrap;
 }
 
 .seg__btn svg {

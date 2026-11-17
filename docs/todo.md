@@ -73,7 +73,8 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 
 - [ ] **Shadows:** soft contact shadow and drop shadow, made on-device from the mask, with strength and angle.
 - [ ] **More backgrounds:** your own image, the original blurred (portrait-mode look), gradients.
-- [ ] **Crop and size presets:** fit to subject with padding; Instagram post/story, WhatsApp status, square 1080 for marketplaces (Jumia, Shopify, Etsy), passport photo.
+- [x] **Crop and size presets:** Whole · Fit (trimmed to the subject with room) · 1:1 (1080, shops) · 4:5 (1080×1350, Instagram post) · 9:16 (1080×1920, story/status), subject centred on the chosen background, a preview in the panel; download, share and ZIP use it.
+- [ ] Passport photo preset: needs Israel's call on which country's rules (size, head height, background).
 - [ ] **Sticker export:** white outline + WebP 512×512 for WhatsApp stickers.
 - [x] Formats: PNG, WebP (where the browser can encode it), JPG (white when the background is clear); **download all as ZIP** (fflate, stored); the current background and format apply to the whole batch, each image with its own edits.
 - [x] Share straight to apps (Web Share API) on phones: "Save or share" since Phase 0, now in every format.
