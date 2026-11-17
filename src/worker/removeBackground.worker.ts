@@ -1,4 +1,4 @@
-import { pipeline, RawImage, type ProgressInfo } from '@huggingface/transformers'
+import { env, pipeline, RawImage, type ProgressInfo } from '@huggingface/transformers'
 import { DEFAULT_REFINE, type Diagnostics, type Mask, type WorkerIn, type WorkerOut } from '../lib/protocol'
 import { refine } from '../lib/refine'
 
@@ -29,7 +29,15 @@ async function buildWasm() {
     dtype: 'fp32',
     progress_callback: onProgress,
   })
-  return { remover: remover as unknown as Remover }
+  return { remover: remover as unknown as Remover, threads: wasmThreads() }
+}
+
+/** ONNX Runtime writes the thread count it settled on into its env when it starts: several when the page
+ * is cross-origin isolated, otherwise 1. Fall back to that rule if the value isn't there. */
+function wasmThreads() {
+  const n = env.backends.onnx.wasm?.numThreads
+  if (typeof n === 'number' && n >= 1) return n
+  return self.crossOriginIsolated ? Math.min(4, Math.ceil((navigator.hardwareConcurrency || 2) / 2)) : 1
 }
 
 class GpuFailed extends Error {}
@@ -119,6 +127,7 @@ async function build(forceWasm: boolean, reason: 'gpu-failed' | 'remembered'): P
         model: WASM_MODEL_ID,
         dtype: 'fp32',
         size: 512,
+        threads: wasm.threads,
         gpu,
       },
     }
@@ -139,7 +148,7 @@ async function build(forceWasm: boolean, reason: 'gpu-failed' | 'remembered'): P
       await remover(new RawImage(new Uint8ClampedArray(64 * 64 * 3).fill(128), 64, 64, 3))
       return {
         remover,
-        diagnostics: { device: 'webgpu', reason: 'gpu', model: MODEL_ID, dtype, size: 1024, gpu },
+        diagnostics: { device: 'webgpu', reason: 'gpu', model: MODEL_ID, dtype, size: 1024, threads: 1, gpu },
       }
     } catch (err) {
       console.warn(`WebGPU could not run the model (${dtype})`, err)
