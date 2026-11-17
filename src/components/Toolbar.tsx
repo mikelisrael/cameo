@@ -78,6 +78,8 @@ type Props = {
   outSize: { width: number; height: number } | null
   diagnostics: Diagnostics | null
   timings: Timings | null
+  /** Page open to the model being ready, ms; null until it is. */
+  startupMs: number | null
   /** How long the first look took, ms; null when there was none. */
   draftMs: number | null
   /** This session's GPU couldn't run the model, so the work moved to the processor. */
@@ -119,6 +121,7 @@ export function Toolbar({
   outSize,
   diagnostics,
   timings,
+  startupMs,
   draftMs,
   fellBack,
   onRetryGpu,
@@ -392,7 +395,15 @@ export function Toolbar({
             Nothing is uploaded.
           </span>
         </p>
-        {diagnostics && <DeviceDetails d={diagnostics} timings={timings} draftMs={draftMs} onRetryGpu={onRetryGpu} />}
+        {diagnostics && (
+          <DeviceDetails
+            d={diagnostics}
+            timings={timings}
+            startupMs={startupMs}
+            draftMs={draftMs}
+            onRetryGpu={onRetryGpu}
+          />
+        )}
         <button type="button" className="device__summary panel__shortcuts" onClick={onShortcuts}>
           Keyboard shortcuts <kbd>?</kbd>
         </button>
@@ -419,11 +430,13 @@ export function seconds(ms: number) {
 function DeviceDetails({
   d,
   timings,
+  startupMs,
   draftMs,
   onRetryGpu,
 }: {
   d: Diagnostics
   timings: Timings | null
+  startupMs: number | null
   draftMs: number | null
   onRetryGpu: () => void
 }) {
@@ -475,7 +488,7 @@ function DeviceDetails({
           </div>
           <div>
             <dt>Start-up</dt>
-            <dd className="mono">{seconds(d.loadMs)}</dd>
+            <dd className="mono">{seconds(startupMs ?? d.loadMs)}</dd>
           </div>
           {timings && (
             <div>

@@ -2,14 +2,14 @@ import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState, t
 import { Appearance } from './components/Appearance'
 import { Compare } from './components/Compare'
 import { EditBar } from './components/EditBar'
-import { Editor, type BrushSettings, type EditorHandle, type Tool } from './components/Editor'
+import type { BrushSettings, EditorHandle, Tool } from './components/Editor'
 import { useFileIntake } from './components/DropZone'
 import { AlertIcon, CameraIcon, InfoIcon, LockIcon, ResetIcon, Spinner, UploadIcon } from './components/icons'
 import { Queue, type Item } from './components/Queue'
 import { Shortcuts } from './components/Shortcuts'
 import { Toolbar } from './components/Toolbar'
 import { paintBackground } from './lib/background'
-import { applyPatch, applyPick, type MaskPatch } from './lib/brush'
+import { applyPatch, applyPick, type MaskPatch } from './lib/maskPatch'
 import {
   NO_SHADOW,
   downloadName,
@@ -35,6 +35,9 @@ import { useAccent } from './lib/useAccent'
 import { useTheme } from './lib/useTheme'
 
 const HowItWorks = lazy(() => import('./components/HowItWorks'))
+// Edit needs the editor and the refine code behind it, which the first screen does not: load them apart.
+const Editor = lazy(() => import('./components/Editor').then((m) => ({ default: m.Editor })))
+let editorPrefetched = false
 
 /** A 1x1 transparent GIF, shown until a HEIC photo has been decoded. */
 const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=='
@@ -81,8 +84,20 @@ const ACTIVATABLE =
 const isActivatable = (t: EventTarget | null) => t instanceof Element && !!t.closest(ACTIVATABLE)
 
 export default function App() {
-  const { status, progress, diagnostics, timings, draftMs, fellBack, error, retrying, process, retryGpu, retryLoad } =
-    useRemover()
+  const {
+    status,
+    progress,
+    diagnostics,
+    timings,
+    startupMs,
+    draftMs,
+    fellBack,
+    error,
+    retrying,
+    process,
+    retryGpu,
+    retryLoad,
+  } = useRemover()
   const theme = useTheme()
   const accent = useAccent()
   const how = useHowItWorks()
@@ -260,6 +275,11 @@ export default function App() {
             }
             e.result = result
             e.bitmap = undefined
+            // Fetch the editor now so Edit opens without waiting.
+            if (!editorPrefetched) {
+              editorPrefetched = true
+              void import('./components/Editor')
+            }
             // Keep the first look's picture until it has faded out over the sharp one.
             const l = looks.current.get(id)
             setLook((cur) => (cur?.id === id ? null : cur))
@@ -1117,25 +1137,33 @@ export default function App() {
               )}
               <div className="sheet stage">
                 {(view === 'edit' || compareCatchingUp) && current?.result && current.edited ? (
-                  <Editor
-                    key={selected}
-                    ref={editorRef}
-                    original={current.result.original}
-                    mask={current.edited}
-                    colors={current.result.colors}
-                    fill={fill}
-                    blurUrl={blurUrl}
-                    imageUrls={imageUrls}
-                    tool={tool}
-                    brush={brush}
-                    showOriginal={showOriginal}
-                    onShowOriginal={setShowOriginal}
-                    version={editorVersion}
-                    onStroke={onStroke}
-                    onTap={onTap}
-                    pending={tapPoint}
-                    still={view !== 'edit'}
-                  />
+                  <Suspense
+                    fallback={
+                      <div style={{ display: 'grid', placeItems: 'center', height: '100%' }}>
+                        <Spinner />
+                      </div>
+                    }
+                  >
+                    <Editor
+                      key={selected}
+                      ref={editorRef}
+                      original={current.result.original}
+                      mask={current.edited}
+                      colors={current.result.colors}
+                      fill={fill}
+                      blurUrl={blurUrl}
+                      imageUrls={imageUrls}
+                      tool={tool}
+                      brush={brush}
+                      showOriginal={showOriginal}
+                      onShowOriginal={setShowOriginal}
+                      version={editorVersion}
+                      onStroke={onStroke}
+                      onTap={onTap}
+                      pending={tapPoint}
+                      still={view !== 'edit'}
+                    />
+                  </Suspense>
                 ) : showCompare && current?.result && after ? (
                   <div className="fade-stack">
                     <Compare
@@ -1186,6 +1214,7 @@ export default function App() {
                 onDownload={save}
                 diagnostics={diagnostics}
                 timings={timings}
+                startupMs={startupMs}
                 draftMs={draftMs}
                 fellBack={fellBack}
                 onRetryGpu={retryGpu}

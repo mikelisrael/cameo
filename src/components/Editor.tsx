@@ -11,7 +11,8 @@ import {
   type SVGProps,
 } from 'react'
 import { cssBackground } from '../lib/background'
-import { Stroke, type MaskPatch, type Rect } from '../lib/brush'
+import { Stroke, type Rect } from '../lib/brush'
+import type { MaskPatch } from '../lib/maskPatch'
 import type { Mask } from '../lib/protocol'
 
 export type Tool = 'move' | 'select' | 'erase' | 'restore'
