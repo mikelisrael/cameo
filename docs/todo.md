@@ -73,7 +73,7 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 
 - [x] **Shadows:** Contact (soft oval under the base) and Drop (the subject's own shape, with angle), strength slider; in Compare, the size preview and every saved file; renders wait 200 ms so sliders don't stutter.
 - [x] **More backgrounds:** blurred photo (portrait-mode look), Studio / Sky / Sunset gradients, your own image (kept in memory only), all through undo like a colour (`src/lib/background.ts`).
-- [ ] Optional from review: the background image picker uses `accept="image/*"`; use `ACCEPT_ATTR` so HEIC/AVIF files without a MIME type aren't greyed out on Windows. A pick that finishes after Start over should be dropped.
+- [x] Optional from review: the background image picker uses `accept="image/*"`; use `ACCEPT_ATTR` so HEIC/AVIF files without a MIME type aren't greyed out on Windows. A pick that finishes after Start over should be dropped.
 - [x] **Crop and size presets:** Whole · Fit (trimmed to the subject with room) · 1:1 (1080, shops) · 4:5 (1080×1350, Instagram post) · 9:16 (1080×1920, story/status), subject centred on the chosen background, a preview in the panel; download, share and ZIP use it.
 - [ ] Passport photo preset: needs Israel's call on which country's rules (size, head height, background).
 - [x] **Sticker export:** "Download as sticker": 512×512 WebP (PNG where WebP can't be made), 16 px margin, ≤100 KB; shares on phones. (outline dropped 2026-11-17 at Israel's request)
