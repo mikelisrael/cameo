@@ -581,8 +581,14 @@ export function Editor({
     >
       <div ref={bgRef} className="editor__bg" style={bgStyle} />
       <div ref={worldRef} className="editor__world" style={{ width: mask.width, height: mask.height }}>
-        <canvas ref={ghostRef} className="editor__ghost" style={{ opacity: ghostOpacity }} />
-        <canvas ref={cutRef} className="editor__cut" style={{ visibility: showOriginal ? 'hidden' : 'visible' }} />
+        <canvas ref={ghostRef} className="editor__ghost" style={{ opacity: ghostOpacity }} aria-hidden="true" />
+        <canvas
+          ref={cutRef}
+          className="editor__cut"
+          style={{ visibility: showOriginal ? 'hidden' : 'visible' }}
+          role="img"
+          aria-label="The cut-out you're editing. Paint with a mouse, finger or pen to erase or restore."
+        />
       </div>
       {pending && <span ref={tapElRef} className="editor__tap" aria-hidden />}
       <div ref={ringRef} className="editor__cursor" style={{ width: brush.size, height: brush.size }} />
