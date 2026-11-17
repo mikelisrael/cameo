@@ -76,7 +76,8 @@ src/
   lib/useRemover.ts               talks to the worker, queues images
   lib/compose.ts                  applies the mask, exports PNG
   lib/decode.ts                   opens photos (HEIC/AVIF too) and caps their size
-  lib/useTheme.ts                 light / dark
+  lib/useTheme.ts                 light / dark / auto
+  lib/useAccent.ts                accent colour
   worker/removeBackground.worker.ts   loads the model, picks GPU or CPU, runs it
 docs/
   design/DESIGN_SYSTEM.md         colours, type, motion, the checklist for anything new
