@@ -91,6 +91,8 @@ type Props = {
   doneCount: number
   onDownloadAll: () => void
   zipping: boolean
+  /** Saves (or on phones shares) the 512 px WhatsApp sticker. */
+  onSticker: () => void
 }
 
 export function Toolbar({
@@ -120,6 +122,7 @@ export function Toolbar({
   doneCount,
   onDownloadAll,
   zipping,
+  onSticker,
 }: Props) {
   // Anything that isn't a hex colour outside the presets is a preset-like choice, not the custom colour.
   const isPreset = PRESETS.some((p) => p.value === fill) || (!!fill && !isColor(fill)) || fill === null
@@ -343,6 +346,13 @@ export function Toolbar({
             {zipping && <Spinner />}
           </button>
         )}
+        <button type="button" className="button button--quiet button--block" onClick={onSticker}>
+          {share ? <ShareIcon /> : <DownloadIcon />}
+          {share ? 'Share as sticker' : 'Download as sticker'}
+        </button>
+        <p className="panel__meta">
+          <span className="mono nowrap">512 × 512</span> with a white outline, for WhatsApp
+        </p>
         {/* The size sits under Size, so this line keeps only the background wording. */}
         <p className="panel__meta">{backgroundNote}</p>
         {scaled && (

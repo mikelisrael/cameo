@@ -22,8 +22,10 @@ import {
   NO_SHADOW,
   downloadName,
   exportImage,
+  exportSticker,
   frameSize,
   shadowKey,
+  stickerName,
   supportsWebp,
   zipCutouts,
   type Format,
@@ -121,6 +123,8 @@ export default function App() {
     width: number
     height: number
   } | null>(null)
+  // The sticker for the selected cut-out; the blob is kept as is, so nothing needs revoking.
+  const [sticker, setSticker] = useState<{ id: string; version: number; blob: Blob } | null>(null)
   const [view, setView] = useState<View>('compare')
   const [tool, setTool] = useState<Tool>('erase')
   const [brush, setBrush] = useState<BrushSettings>({ size: 40, softness: 0.25, smart: true })
@@ -252,6 +256,7 @@ export default function App() {
     setSelected(null)
     setAfter(null)
     setFramed(null)
+    setSticker(null)
     setFill(null)
     setView('compare')
   }, [clearImages])
@@ -376,6 +381,31 @@ export default function App() {
     [framed],
   )
 
+  // The sticker, rendered ahead so a phone can share it inside the tap's gesture.
+  useEffect(() => {
+    const id = selected
+    const e = id ? entries.current.get(id) : undefined
+    const r = e?.result
+    if (!id || !r) {
+      setSticker(null)
+      return
+    }
+    if (view === 'edit') return
+    let cancelled = false
+    const version = editVersion
+    const timer = setTimeout(() => {
+      exportSticker(r.original, e.edited ?? r.mask, r.colors)
+        .then((blob) => {
+          if (!cancelled) setSticker({ id, version, blob })
+        })
+        .catch(() => {})
+    }, RENDER_DELAY)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [selected, selectedDone, editVersion, view])
+
   // The Blur background's preview: the photo at a few dozen pixels, scaled up to ~640 px and kept as a JPEG.
   useEffect(() => {
     const id = selected
@@ -468,6 +498,33 @@ export default function App() {
     a.click()
     setTimeout(() => URL.revokeObjectURL(a.href), 1000)
   }, [selected, fill, after, framed, editVersion, format, frame, shadow, shadowId])
+
+  const saveSticker = useCallback(async () => {
+    const e = selected ? entries.current.get(selected) : undefined
+    if (!e?.result) return
+    try {
+      const ready = sticker && sticker.id === selected && sticker.version === editVersion ? sticker.blob : null
+      if (shareFiles && ready) {
+        try {
+          await navigator.share({
+            files: [new File([ready], stickerName(e.file.name, ready), { type: ready.type })],
+          })
+          return
+        } catch (err) {
+          if ((err as Error).name === 'AbortError') return // closed the share sheet
+          // Anything else (not allowed, unsupported): fall back to a download.
+        }
+      }
+      const blob = ready ?? (await exportSticker(e.result.original, e.edited ?? e.result.mask, e.result.colors))
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = stickerName(e.file.name, blob)
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    } catch {
+      setNotice("Couldn't make the sticker. Try again.")
+    }
+  }, [selected, sticker, editVersion])
 
   const doneCount = items.filter((i) => i.state === 'done').length
 
@@ -1006,6 +1063,7 @@ export default function App() {
                 webp={webp}
                 doneCount={doneCount}
                 onDownloadAll={saveAll}
+                onSticker={saveSticker}
                 zipping={zipping}
               />
             ) : (
