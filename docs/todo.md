@@ -41,7 +41,7 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 - [ ] ~~Tiled high-resolution inference~~ Not built (2026-11-16): a salient-object model on crops loses the whole-picture context and mislabels tiles, and the full-res refinement gives the edge resolution tiling was for. BiRefNet_HR has no public ONNX. Revisit if one appears.
 - [ ] ~~Model by subject~~ Not built (2026-11-16): no BiRefNet-matting or HR in ONNX; portrait/full are 467 MB fp16 downloads (4x lite) under MIT. Revisit with the bench if a matting ONNX appears.
 - [ ] CPU path: still 512 lite (the refinement recovers much of what 512 loses). 1024 on WASM needs measuring on a real phone first.
-- [ ] Optional from review: decontaminate's pass 1 isn't downsampled for photos under 2048 px (`d = floor(long/1024)`), so it holds ~18 full-size arrays there; use `d = max(2, ceil(long/1024))` and free pass-1 temporaries.
+- [x] (Done: pass 1 always at least 2× coarse, its buffers freed before pass 2; same edges within 1 level.) Optional from review: decontaminate's pass 1 isn't downsampled for photos under 2048 px (`d = floor(long/1024)`), so it holds ~18 full-size arrays there; use `d = max(2, ceil(long/1024))` and free pass-1 temporaries.
 
 ## Phase 2: fix what the model got wrong (control)
 
