@@ -4,15 +4,17 @@
   "license": "MIT",
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "pnpm@11.1.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "lint": "oxlint",
-    "format": "prettier --write src",
-    "format:check": "prettier --check src",
+    "format": "prettier --write src e2e playwright.config.ts",
+    "format:check": "prettier --check src e2e playwright.config.ts",
     "check": "npm run typecheck && npm run format:check && npm run build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "e2e": "pnpm build && playwright test"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.2",
@@ -22,6 +24,7 @@
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

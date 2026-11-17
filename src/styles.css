@@ -1620,8 +1620,7 @@ kbd {
   }
 
   .empty {
-    padding: 8px 0 32px;
-    place-items: start center;
+    padding: 16px 0;
   }
 
   .drop__inner {

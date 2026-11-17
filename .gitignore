@@ -28,3 +28,8 @@ dist-ssr
 
 # Git worktrees for parallel runs (<repo>/.worktrees/<branch-slug>)
 .worktrees/
+
+# Playwright output and the e2e browser profile (holds the cached model)
+test-results/
+playwright-report/
+.cache/
