@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
 import { Compare } from './components/Compare'
 import { EditBar } from './components/EditBar'
 import { Editor, type BrushSettings, type EditorHandle, type Tool } from './components/Editor'
@@ -22,6 +22,7 @@ import { applyPatch, applyPick, type MaskPatch } from './lib/brush'
 import {
   NO_SHADOW,
   downloadName,
+  draftPreview,
   exportImage,
   exportSticker,
   frameSize,
@@ -50,12 +51,17 @@ type Entry = {
   file: File
   url: string
   result?: Result
+  /** The decoded photo, before the result hands it over: the first look is drawn from it. */
+  bitmap?: ImageBitmap
   /** The mask as edited; made (a copy of the model's) the first time Edit opens. */
   edited?: Mask
   history: History
 }
 
 type View = 'compare' | 'edit'
+
+/** The first look at an image: the rough cut-out, drawn small. `ratio` is width / height. */
+type Look = { id: string; url: string; ratio: number }
 
 /** How long a change must sit still before its full-size render starts. */
 const RENDER_DELAY = 200
@@ -83,7 +89,8 @@ const ACTIVATABLE =
 const isActivatable = (t: EventTarget | null) => t instanceof Element && !!t.closest(ACTIVATABLE)
 
 export default function App() {
-  const { status, progress, diagnostics, fellBack, error, process, retryGpu } = useRemover()
+  const { status, progress, diagnostics, timings, draftMs, fellBack, error, retrying, process, retryGpu, retryLoad } =
+    useRemover()
   const theme = useTheme()
   const how = useHowItWorks()
   // Mirrors how.isOpen for handlers registered once or owned elsewhere (paste lives in useFileIntake).
@@ -93,6 +100,8 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [fill, setFill] = useState<string | null>(null)
+  const fillRef = useRef(fill)
+  fillRef.current = fill
   const [custom, setCustom] = useState('#e0532c')
   // Not remembered between visits.
   const [format, setFormat] = useState<Format>('png')
@@ -184,6 +193,20 @@ export default function App() {
   const itemsRef = useRef(items)
   itemsRef.current = items
 
+  // The first look: the rough cut-out drawn small, shown while the sharp one is made, then faded out over it.
+  const looks = useRef(new Map<string, Look>())
+  const [look, setLook] = useState<Look | null>(null) // the selected-to-be-shown draft of the item being processed
+  const [fade, setFade] = useState<Look | null>(null) // a draft the sharp result is replacing
+  const releaseLook = useCallback((id: string) => {
+    const l = looks.current.get(id)
+    if (!l) return
+    URL.revokeObjectURL(l.url)
+    looks.current.delete(id)
+    setLook((cur) => (cur?.id === id ? null : cur))
+    setFade((cur) => (cur?.id === id ? null : cur))
+    setItems((list) => list.map((i) => (i.id === id && i.draft ? { ...i, draft: undefined } : i)))
+  }, [])
+
   const lastStatus = useRef<Status>('idle')
   useEffect(() => {
     const prev = lastStatus.current
@@ -215,7 +238,24 @@ export default function App() {
             if (!e) return URL.revokeObjectURL(d.url)
             if (e.url) URL.revokeObjectURL(e.url)
             e.url = d.url
+            e.bitmap = d.bitmap
             patch(id, { thumb: d.url, scaled: d.scaled })
+          },
+          undefined,
+          (mask) => {
+            const e = entries.current.get(id)
+            if (!e || e.result || !e.bitmap) return
+            draftPreview(e.bitmap, mask, fillRef.current ?? undefined, images.current)
+              .then(({ blob, ratio }) => {
+                // The sharp result, a removal or Start over may have come first: then there is no first look.
+                const now = entries.current.get(id)
+                if (!now || now.result || looks.current.has(id)) return
+                const l = { id, url: URL.createObjectURL(blob), ratio }
+                looks.current.set(id, l)
+                setLook(l)
+                patch(id, { draft: l.url })
+              })
+              .catch(() => {})
           },
         )
           .then((result) => {
@@ -226,7 +266,12 @@ export default function App() {
               return
             }
             e.result = result
-            patch(id, { state: 'done' })
+            e.bitmap = undefined
+            // Keep the first look's picture until it has faded out over the sharp one.
+            const l = looks.current.get(id)
+            setLook((cur) => (cur?.id === id ? null : cur))
+            if (l) setFade(l)
+            patch(id, { state: 'done', draft: undefined })
             const all = itemsRef.current
             const last = all.length >= 2 && all.every((i) => i.id === id || i.state === 'done')
             announce(last ? `All ${all.length} cut-outs ready.` : `${file.name}: cut-out ready.`)
@@ -236,12 +281,13 @@ export default function App() {
             setSelected((s) => s ?? id)
           })
           .catch((err: Error) => {
-            patch(id, { state: 'error', error: err.message })
+            patch(id, { state: 'error', error: err.message, draft: undefined })
+            releaseLook(id)
             if (entries.current.has(id)) announce(`${file.name} couldn't be cut out.`)
           })
       }
     },
-    [process, patch, announce],
+    [process, patch, announce, releaseLook],
   )
 
   const forget = (id: string) => {
@@ -255,6 +301,7 @@ export default function App() {
     if (blurUrl) URL.revokeObjectURL(blurUrl)
     blurUrls.current.delete(id)
     segRef.current.drop(id)
+    releaseLook(id)
   }
 
   const remove = useCallback((id: string) => {
@@ -897,6 +944,11 @@ export default function App() {
     : null
 
   const pending = items.find((i) => i.state === 'processing') ?? items.find((i) => i.state === 'queued')
+  // The first look fades only over its own image: anything else selected means it has nothing to fade over.
+  useEffect(() => {
+    if (fade && selected !== fade.id && items.some((i) => i.id === selected)) releaseLook(fade.id)
+  }, [fade, selected, items, releaseLook])
+  const fadeOver = showCompare && fade && fade.id === selected ? fade : null
   const hasItems = items.length > 0
 
   return (
@@ -1020,7 +1072,7 @@ export default function App() {
                   <span className="nowrap">as many as you like</span>
                 </p>
               </div>
-              <ModelLine status={status} progress={progress} error={error} />
+              <ModelLine status={status} progress={progress} error={error} retrying={retrying} onRetry={retryLoad} />
             </div>
           </main>
         ) : null}
@@ -1098,19 +1150,31 @@ export default function App() {
                     still={view !== 'edit'}
                   />
                 ) : showCompare && current?.result && after ? (
-                  <Compare
-                    key={selected}
-                    before={current.url}
-                    after={after.url}
-                    width={current.result.original.width}
-                    height={current.result.original.height}
-                    reveal={reveal}
-                    name={selectedItem?.name}
-                  />
+                  <div className="fade-stack">
+                    <Compare
+                      key={selected}
+                      before={current.url}
+                      after={after.url}
+                      width={current.result.original.width}
+                      height={current.result.original.height}
+                      reveal={reveal}
+                      name={selectedItem?.name}
+                    />
+                    {fadeOver && (
+                      <DraftFade key={fadeOver.id} look={fadeOver} onDone={() => releaseLook(fadeOver.id)} />
+                    )}
+                  </div>
                 ) : selectedItem?.state === 'error' ? (
                   <Failure name={selectedItem.name} message={selectedItem.error} onRetry={intake.open} />
                 ) : pending ? (
-                  <Pending item={pending} status={status} progress={progress} />
+                  <Pending
+                    item={pending}
+                    status={status}
+                    progress={progress}
+                    look={look?.id === pending.id ? look : null}
+                    retrying={retrying}
+                    onRetry={retryLoad}
+                  />
                 ) : (
                   <Failure
                     name={items[items.length - 1]?.name}
@@ -1134,6 +1198,8 @@ export default function App() {
                 onCustom={changeCustom}
                 onDownload={save}
                 diagnostics={diagnostics}
+                timings={timings}
+                draftMs={draftMs}
                 fellBack={fellBack}
                 onRetryGpu={retryGpu}
                 scaled={selectedItem?.scaled}
@@ -1227,16 +1293,28 @@ function SetupText({ progress, download }: { progress: number; download?: boolea
   )
 }
 
-function ModelLine({ status, progress, error }: { status: Status; progress: number; error: string | null }) {
+function ModelLine({
+  status,
+  progress,
+  error,
+  retrying,
+  onRetry,
+}: {
+  status: Status
+  progress: number
+  error: string | null
+  retrying: { attempt: number; of: number } | null
+  onRetry: () => void
+}) {
   if (status === 'error') {
     return (
       <div className="model model--error" role="alert">
         <AlertIcon width={16} height={16} />
         <span className="model__text">
-          The background remover couldn't load{error ? ` (${error})` : ''}. Check your connection, then reload.
+          The background remover couldn't load{error ? ` (${error})` : ''}. Check your connection, then try again.
         </span>
-        <button type="button" className="button button--quiet button--sm" onClick={() => location.reload()}>
-          Reload
+        <button type="button" className="button button--quiet button--sm" onClick={onRetry}>
+          Try again
         </button>
       </div>
     )
@@ -1245,7 +1323,13 @@ function ModelLine({ status, progress, error }: { status: Status; progress: numb
     return (
       <div className="model">
         <span className="model__text">
-          <SetupText progress={progress} download />
+          {retrying ? (
+            <>
+              <Spinner /> Connection dropped. Trying again ({retrying.attempt} of {retrying.of})…
+            </>
+          ) : (
+            <SetupText progress={progress} download />
+          )}
         </span>
         <span
           className="bar"
@@ -1268,18 +1352,77 @@ function ModelLine({ status, progress, error }: { status: Status; progress: numb
   )
 }
 
-function Pending({ item, status, progress }: { item: Item; status: Status; progress: number }) {
+function Pending({
+  item,
+  status,
+  progress,
+  look,
+  retrying,
+  onRetry,
+}: {
+  item: Item
+  status: Status
+  progress: number
+  look: Look | null
+  retrying: { attempt: number; of: number } | null
+  onRetry: () => void
+}) {
   const waiting = status === 'idle' || status === 'loading'
   return (
     <div className="pending">
-      <div className="pending__frame">
-        <img className="pending__img" src={item.thumb} alt="" draggable={false} />
-        <span className="pending__scan" aria-hidden="true" />
-      </div>
+      {look ? (
+        <div className="draft" style={{ '--ratio': look.ratio, aspectRatio: look.ratio } as CSSProperties}>
+          <img className="draft__img" src={look.url} alt="" draggable={false} />
+        </div>
+      ) : (
+        <div className="pending__frame">
+          <img className="pending__img" src={item.thumb} alt="" draggable={false} />
+          <span className="pending__scan" aria-hidden="true" />
+        </div>
+      )}
       <p className="pending__caption">
-        <Spinner />
-        {waiting ? <SetupText progress={progress} /> : 'Removing background…'}
+        {status === 'error' ? (
+          <>
+            <AlertIcon width={16} height={16} />
+            The background remover couldn't load.
+            <button type="button" className="button button--quiet button--sm" onClick={onRetry}>
+              Try again
+            </button>
+          </>
+        ) : retrying ? (
+          <>
+            <Spinner />
+            Connection dropped. Trying again ({retrying.attempt} of {retrying.of})…
+          </>
+        ) : (
+          <>
+            <Spinner />
+            {waiting ? <SetupText progress={progress} /> : look ? 'Sharpening edges…' : 'Removing background…'}
+          </>
+        )}
       </p>
+    </div>
+  )
+}
+
+/** The first look, laid over the sharp cut-out and faded away; with reduced motion it just goes. */
+function DraftFade({ look, onDone }: { look: Look; onDone: () => void }) {
+  const [out, setOut] = useState(false)
+  useEffect(() => {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return onDone()
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => setOut(true)))
+    return () => cancelAnimationFrame(frame)
+    // `onDone` is a new function each render; it is only called once, when the fade ends.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  return (
+    <div
+      className={`draft draft--fade${out ? ' draft--out' : ''}`}
+      style={{ '--ratio': look.ratio, aspectRatio: look.ratio } as CSSProperties}
+      aria-hidden="true"
+      onTransitionEnd={onDone}
+    >
+      <img className="draft__img" src={look.url} alt="" draggable={false} />
     </div>
   )
 }

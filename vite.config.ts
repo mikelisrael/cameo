@@ -68,6 +68,12 @@ export default defineConfig({
             },
           },
           {
+            // The 4.6 MB first-look model, self-hosted; the big model is cached by transformers.js.
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith('/models/'),
+            handler: 'CacheFirst',
+            options: { cacheName: 'draft-model', cacheableResponse: { statuses: [200] } },
+          },
+          {
             // ORT's JS glue only: transformers.js caches the ~20 MB WASM itself.
             urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/onnxruntime-web.*\.mjs$/,
             handler: 'CacheFirst',

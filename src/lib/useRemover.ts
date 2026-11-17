@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { decodeImage, type Decoded } from './decode'
-import type { Diagnostics, Mask, RefineOptions, WorkerIn, WorkerOut } from './protocol'
+import type { Diagnostics, DraftIn, DraftOut, Mask, RefineOptions, Timings, WorkerIn, WorkerOut } from './protocol'
 
 export type Status = 'idle' | 'loading' | 'ready' | 'processing' | 'error'
 export type Result = {
@@ -43,6 +43,13 @@ async function postCopy(worker: Worker, id: string, bitmap: ImageBitmap, opts?: 
   )
 }
 
+/** The first-look model's input size: the photo is shrunk to this before it reaches that worker. */
+const DRAFT_SIZE = 320
+
+/** With the sharp model already running, it waits this long (at most) for the first look, so the two don't
+ * fight over the processor: on a busy CPU the small model would take several times longer. */
+const DRAFT_HEAD_START_MS = 2500
+
 type Pending = { resolve: (r: Result) => void; reject: (e: Error) => void; decoded: Decoded; opts?: ProcessOpts }
 
 export function useRemover() {
@@ -50,13 +57,78 @@ export function useRemover() {
   const pending = useRef(new Map<string, Pending>())
   const active = useRef(0)
   const loaded = useRef(false)
+  const failed = useRef(false) // the model couldn't load: photos wait here until Try again
+  const lastLoad = useRef<{ forceWasm: boolean; reason?: 'gpu-failed' | 'remembered' }>({ forceWasm: false })
+  const [retrying, setRetrying] = useState<{ attempt: number; of: number } | null>(null)
   const [status, setStatus] = useState<Status>('idle')
   const [progress, setProgress] = useState(0)
   const [device, setDevice] = useState<'webgpu' | 'wasm' | null>(null)
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null)
+  const [timings, setTimings] = useState<Timings | null>(null)
   const [fellBack, setFellBack] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const chain = useRef<Promise<unknown>>(Promise.resolve())
+  const draftWorker = useRef<Worker | null>(null)
+  const draftBroken = useRef(false) // the draft worker's script failed: the sharp path goes on without it
+  const draftWaiting = useRef(new Map<string, { done: (mask: Mask) => void; settle: () => void }>())
+  const [draftMs, setDraftMs] = useState<number | null>(null)
+
+  /** The first-look worker, started on first use. Every failure here is silent: the sharp cut-out still comes. */
+  const getDraftWorker = useCallback(() => {
+    if (draftWorker.current) return draftWorker.current
+    if (draftBroken.current) return null
+    let worker: Worker
+    try {
+      worker = new Worker(new URL('../worker/draft.worker.ts', import.meta.url), { type: 'module' })
+    } catch {
+      draftBroken.current = true
+      return null
+    }
+    draftWorker.current = worker
+    worker.onmessage = (e: MessageEvent<DraftOut>) => {
+      if (draftWorker.current !== worker) return
+      const m = e.data
+      const waiting = m.id ? draftWaiting.current.get(m.id) : undefined
+      if (m.type !== 'draft') return waiting?.settle() // an error: that photo just has no first look
+      draftWaiting.current.delete(m.id)
+      if (!waiting) return // the sharp result got there first, or the photo is gone
+      setDraftMs(m.ms)
+      waiting.done(m.mask)
+      waiting.settle()
+    }
+    const crashed = (e: Event) => {
+      e.preventDefault()
+      if (draftWorker.current !== worker) return
+      draftBroken.current = true
+      draftWorker.current = null
+      for (const w of draftWaiting.current.values()) w.settle()
+      draftWaiting.current.clear()
+      worker.terminate()
+    }
+    worker.onerror = crashed
+    worker.onmessageerror = crashed
+    return worker
+  }, [])
+
+  /** Sends a 320 px copy of the photo, so the draft worker never sees the full-size bitmap. */
+  const postDraft = useCallback(
+    async (id: string, bitmap: ImageBitmap) => {
+      try {
+        const worker = getDraftWorker()
+        if (!worker) return draftWaiting.current.get(id)?.settle()
+        const small = await createImageBitmap(bitmap, {
+          resizeWidth: DRAFT_SIZE,
+          resizeHeight: DRAFT_SIZE,
+          resizeQuality: 'medium',
+        })
+        if (!draftWaiting.current.has(id) || draftWorker.current !== worker) return small.close()
+        worker.postMessage({ type: 'draft', id, image: small } satisfies DraftIn, [small])
+      } catch {
+        draftWaiting.current.get(id)?.settle() // no first look for this photo
+      }
+    },
+    [getDraftWorker],
+  )
 
   /** Replaces the worker with a fresh one (a new ONNX Runtime) and hands it every image still waiting. */
   const spawn = useCallback(function spawn(forceWasm: boolean, reason?: 'gpu-failed' | 'remembered') {
@@ -67,17 +139,24 @@ export function useRemover() {
     workerRef.current = worker
     const map = pending.current
     loaded.current = false
+    failed.current = false
+    lastLoad.current = { forceWasm, reason }
     setProgress(0)
     setError(null)
+    setRetrying(null)
     setStatus('loading')
 
     worker.onmessage = (e: MessageEvent<WorkerOut>) => {
       if (workerRef.current !== worker) return // a worker we already replaced
       const m = e.data
       if (m.type === 'progress') {
+        setRetrying(null)
         if (m.progress !== undefined) setProgress(Math.min(1, m.progress / 100))
+      } else if (m.type === 'retrying') {
+        setRetrying({ attempt: m.attempt, of: m.of })
       } else if (m.type === 'ready') {
         loaded.current = true
+        setRetrying(null)
         setDevice(m.device)
         setDiagnostics(m.diagnostics)
         setProgress(1)
@@ -85,6 +164,7 @@ export function useRemover() {
       } else if (m.type === 'result') {
         const p = map.get(m.id)
         map.delete(m.id)
+        setTimings(m.timings)
         if (p) {
           const { bitmap, scaled, url } = p.decoded
           p.resolve({ original: bitmap, mask: m.mask, colors: m.colors, raw: m.raw, scaled, url })
@@ -99,6 +179,8 @@ export function useRemover() {
           map.delete(m.id)
           p?.reject(new Error(m.message))
         } else {
+          failed.current = true
+          setRetrying(null)
           setError(m.message)
           setStatus('error')
         }
@@ -112,6 +194,8 @@ export function useRemover() {
       const message = e instanceof ErrorEvent && e.message ? e.message : 'The worker failed to start'
       for (const p of map.values()) p.reject(new Error(message))
       map.clear()
+      failed.current = true
+      setRetrying(null)
       setError('a file was missing')
       setStatus('error')
     }
@@ -135,6 +219,9 @@ export function useRemover() {
       workerRef.current?.terminate()
       workerRef.current = null
       map.clear()
+      draftWorker.current?.terminate()
+      draftWorker.current = null
+      draftWaiting.current.clear()
     }
   }, [spawn])
 
@@ -145,6 +232,12 @@ export function useRemover() {
     spawn(false)
   }, [spawn])
 
+  /** Try again after the model couldn't load: a fresh worker, no page reload. Photos already dropped stay on
+   * screen and are handed to it (see spawn). */
+  const retryLoad = useCallback(() => {
+    spawn(lastLoad.current.forceWasm, lastLoad.current.reason)
+  }, [spawn])
+
   const run = useCallback(
     async (
       file: File,
@@ -152,6 +245,7 @@ export function useRemover() {
       isCancelled?: () => boolean,
       onDecoded?: (d: Decoded) => void,
       opts?: ProcessOpts,
+      onDraft?: (mask: Mask) => void,
     ): Promise<Result> => {
       if (isCancelled?.()) throw new Error('Cancelled')
       if (!workerRef.current) throw new Error('Worker not available')
@@ -160,27 +254,51 @@ export function useRemover() {
       onDecoded?.(decoded)
       const id = crypto.randomUUID()
       active.current++
-      setStatus(loaded.current ? 'processing' : 'loading')
+      setStatus((s) => (s === 'error' ? s : loaded.current ? 'processing' : 'loading'))
       try {
         return await new Promise<Result>((resolve, reject) => {
           pending.current.set(id, { resolve, reject, decoded, opts })
           // The worker gets a copy, so it never decodes the file and never owns our display bitmap.
           const worker = workerRef.current
           if (!worker) return reject(new Error('Worker not available'))
-          postCopy(worker, id, decoded.bitmap, opts).catch((err: Error) => {
-            pending.current.delete(id)
-            reject(err)
-          })
+          // The rough mask comes back long before the sharp one, even while the big model is still downloading.
+          let headStart: Promise<void> | undefined
+          if (onDraft) {
+            const first = new Promise<void>((resolve) => {
+              const timer = setTimeout(resolve, DRAFT_HEAD_START_MS)
+              draftWaiting.current.set(id, {
+                done: onDraft,
+                settle: () => {
+                  clearTimeout(timer)
+                  resolve()
+                },
+              })
+            })
+            void postDraft(id, decoded.bitmap)
+            if (loaded.current) headStart = first
+          }
+          void (headStart ?? Promise.resolve())
+            .then(() => {
+              // A worker started meanwhile was already handed this image (see spawn).
+              if (workerRef.current !== worker || !pending.current.has(id)) return
+              if (failed.current) return // the model isn't loading: Try again hands it this image
+              return postCopy(worker, id, decoded.bitmap, opts)
+            })
+            .catch((err: Error) => {
+              pending.current.delete(id)
+              reject(err)
+            })
         })
       } catch (e) {
         decoded.bitmap.close()
         throw e
       } finally {
+        draftWaiting.current.delete(id) // a draft arriving after this is dropped
         active.current--
         setStatus((s) => (s === 'error' ? s : active.current > 0 ? 'processing' : loaded.current ? 'ready' : 'loading'))
       }
     },
-    [],
+    [postDraft],
   )
 
   /** Sequential: each call waits for the previous one to finish. `isCancelled` is asked when its
@@ -192,13 +310,27 @@ export function useRemover() {
       isCancelled?: () => boolean,
       onDecoded?: (d: Decoded) => void,
       opts?: ProcessOpts,
+      onDraft?: (mask: Mask) => void,
     ): Promise<Result> => {
-      const next = chain.current.then(() => run(file, onStart, isCancelled, onDecoded, opts))
+      const next = chain.current.then(() => run(file, onStart, isCancelled, onDecoded, opts, onDraft))
       chain.current = next.catch(() => undefined)
       return next
     },
     [run],
   )
 
-  return { status, progress, device, diagnostics, fellBack, error, process, retryGpu }
+  return {
+    status,
+    progress,
+    device,
+    diagnostics,
+    timings,
+    draftMs,
+    fellBack,
+    error,
+    retrying,
+    process,
+    retryGpu,
+    retryLoad,
+  }
 }

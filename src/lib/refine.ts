@@ -62,11 +62,82 @@ export function boxBlur(src: Float32Array, w: number, h: number, r: number, out:
   return out
 }
 
+type Rect = { x0: number; y0: number; x1: number; y1: number }
+
+/** Per cell of g x g pixels: lowest and highest alpha, and whether any pixel is strictly between 0 and 255. */
+function scanCells(alpha: Uint8ClampedArray, w: number, h: number, g: number) {
+  const cols = Math.ceil(w / g)
+  const rows = Math.ceil(h / g)
+  const min = new Uint8Array(cols * rows)
+  const max = new Uint8Array(cols * rows)
+  const soft = new Uint8Array(cols * rows)
+  for (let cy = 0; cy < rows; cy++) {
+    const y1 = Math.min(h, (cy + 1) * g)
+    for (let cx = 0; cx < cols; cx++) {
+      const x1 = Math.min(w, (cx + 1) * g)
+      let lo = 255
+      let hi = 0
+      let sf = 0
+      for (let y = cy * g; y < y1; y++) {
+        for (let x = cx * g, i = y * w + x; x < x1; x++, i++) {
+          const a = alpha[i]
+          if (a < lo) lo = a
+          if (a > hi) hi = a
+          if (a !== 0 && a !== 255) sf = 1
+        }
+      }
+      const k = cy * cols + cx
+      min[k] = lo
+      max[k] = hi
+      soft[k] = sf
+    }
+  }
+  return { cols, rows, min, max, soft }
+}
+
+/**
+ * The tiles (ts x ts, the last row and column may be smaller) the test marks active, as rectangles: active tiles next to
+ * each other in a row become one run, and runs with the same columns in consecutive rows are stacked.
+ */
+function activeRects(w: number, h: number, ts: number, active: (r: Rect) => boolean): Rect[] {
+  const done: Rect[] = []
+  let open: Rect[] = []
+  for (let y0 = 0; y0 < h; y0 += ts) {
+    const y1 = Math.min(h, y0 + ts)
+    const next: Rect[] = []
+    let run: Rect | null = null
+    const close = () => {
+      if (!run) return
+      const above = open.find((o) => o.x0 === run!.x0 && o.x1 === run!.x1)
+      if (above) {
+        above.y1 = run.y1
+        next.push(above)
+      } else next.push(run)
+      run = null
+    }
+    for (let x0 = 0; x0 < w; x0 += ts) {
+      const t = { x0, y0, x1: Math.min(w, x0 + ts), y1 }
+      if (active(t)) {
+        if (run) run.x1 = t.x1
+        else run = t
+      } else close()
+    }
+    close()
+    for (const o of open) if (!next.includes(o)) done.push(o)
+    open = next
+  }
+  return done.concat(open)
+}
+
 /**
  * Sharpens a mask made at the model's resolution so it follows the photo's edges at full resolution, using the fast
  * guided filter (He, Sun & Tang, "Guided Image Filtering" and "Fast Guided Filter", 2015) with the photo's colour as the
  * guide: the filter's linear coefficients are solved on a sub-sampled copy, then applied to the full-res RGB. The result
  * only replaces the mask in the soft band around the edge; solid inside and outside pixels keep the model's value.
+ *
+ * Only the neighbourhood of the edge is filtered. Where the mask has one value over everything a pixel's output can
+ * depend on, the filter returns that value untouched, so those tiles are skipped. A pixel's output depends on the mask
+ * and photo within (2r + 2) sub-sampled blocks: two box filters of radius r, plus the bilinear step back to full size.
  */
 export function refineAlpha(
   image: Pixels,
@@ -81,11 +152,74 @@ export function refineAlpha(
   if (f <= 1.05) return new Uint8ClampedArray(alpha)
 
   const s = Math.max(2, Math.ceil(f / 2))
+  const r = Math.max(1, Math.round((opts.radius * f) / s))
+  const halo = (2 * r + 2) * s
+
+  // Tile and cell edges are multiples of s so each region's sub-sampled blocks are the whole image's blocks.
+  const g = Math.ceil(32 / s) * s
+  const cells = scanCells(alpha, w, h, g)
+  const regions = activeRects(w, h, g * 4, (t) => {
+    const cx0 = Math.max(0, Math.floor((t.x0 - halo) / g))
+    const cx1 = Math.min(cells.cols - 1, Math.floor((t.x1 + halo - 1) / g))
+    const cy0 = Math.max(0, Math.floor((t.y0 - halo) / g))
+    const cy1 = Math.min(cells.rows - 1, Math.floor((t.y1 + halo - 1) / g))
+    let lo = 255
+    let hi = 0
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const k = cy * cells.cols + cx
+        if (cells.min[k] < lo) lo = cells.min[k]
+        if (cells.max[k] > hi) hi = cells.max[k]
+      }
+    }
+    return lo !== hi
+  })
+
+  const grown = regions.map((t) => ({
+    x0: Math.max(0, t.x0 - halo),
+    y0: Math.max(0, t.y0 - halo),
+    x1: Math.min(w, t.x1 + halo),
+    y1: Math.min(h, t.y1 + halo),
+  }))
+  let area = 0
+  for (const t of grown) area += (t.x1 - t.x0) * (t.y1 - t.y0)
+  if (area >= 0.6 * w * h) return guidedFilter(image, channels, alpha, w, h, s, r, opts.eps)
+
+  const out = new Uint8ClampedArray(alpha)
+  regions.forEach((t, n) => {
+    const { x0, y0, x1, y1 } = grown[n]
+    const rw = x1 - x0
+    const rh = y1 - y0
+    const subImage = new Uint8Array(rw * rh * channels)
+    const subAlpha = new Uint8ClampedArray(rw * rh)
+    for (let y = 0; y < rh; y++) {
+      const i = (y0 + y) * w + x0
+      subImage.set(image.subarray(i * channels, (i + rw) * channels), y * rw * channels)
+      subAlpha.set(alpha.subarray(i, i + rw), y * rw)
+    }
+    const res = guidedFilter(subImage, channels, subAlpha, rw, rh, s, r, opts.eps)
+    for (let y = t.y0; y < t.y1; y++) {
+      const i = (y - y0) * rw + (t.x0 - x0)
+      out.set(res.subarray(i, i + (t.x1 - t.x0)), y * w + t.x0)
+    }
+  })
+  return out
+}
+
+/** The guided filter over a whole region, with the sub-sampling step `s` and box radius `r` (in blocks) already chosen. */
+function guidedFilter(
+  image: Pixels,
+  channels: number,
+  alpha: Uint8ClampedArray,
+  w: number,
+  h: number,
+  s: number,
+  r: number,
+  eps: number,
+): Uint8ClampedArray {
   const ws = Math.ceil(w / s)
   const hs = Math.ceil(h / s)
   const n = ws * hs
-  const r = Math.max(1, Math.round((opts.radius * f) / s))
-  const eps = opts.eps
 
   // Full-size scratch arrays are recycled through a small pool to keep memory down.
   const pool: Float32Array[] = []
@@ -379,6 +513,82 @@ function blurFusionCoarse(
   return { F1, bB1, ax, ay, ws }
 }
 
+type Pass2 = {
+  image: Pixels
+  channels: number
+  alpha: Uint8ClampedArray
+  w: number
+  F1: Uint8ClampedArray
+  bB1: Float32Array[]
+  ay: Axis
+  xi0: Int32Array
+  xi1: Int32Array
+  xf: Float32Array
+  ws: number
+  R2: number
+  bA: Float32Array
+  src: Float32Array
+  outF: Float32Array
+  outB: Float32Array
+  tmp: Float32Array
+  result: Uint8ClampedArray
+}
+
+/** Pass 2 of blur fusion over `reg` (a tile `t` plus an R2 border); writes only the soft pixels of `t`. */
+function pass2Region(c2: Pass2, reg: Rect, t: Rect) {
+  const { image, channels, alpha, w, F1, bB1, ay, xi0, xi1, xf, ws, R2, bA, src, outF, outB, tmp, result } = c2
+  const rx0 = reg.x0
+  const ry0 = reg.y0
+  const rw = reg.x1 - rx0
+  const rh = reg.y1 - ry0
+  for (let y = 0; y < rh; y++) {
+    for (let x = 0, i = (ry0 + y) * w + rx0, k = y * rw; x < rw; x++, i++, k++) src[k] = alpha[i] / 255
+  }
+  boxBlur(src, rw, rh, R2, bA, tmp)
+  for (let c = 0; c < 3; c++) {
+    for (let y = 0; y < rh; y++) {
+      for (let x = 0, i = (ry0 + y) * w + rx0, k = y * rw; x < rw; x++, i++, k++) {
+        src[k] = (F1[i * 3 + c] / 255) * (alpha[i] / 255)
+      }
+    }
+    boxBlur(src, rw, rh, R2, outF, tmp)
+    const bB = bB1[c]
+    for (let y = 0; y < rh; y++) {
+      const gyy = ry0 + y
+      const r0 = ay.i0[gyy] * ws
+      const r1 = ay.i1[gyy] * ws
+      const fy = ay.f[gyy]
+      const gy = 1 - fy
+      for (let x = 0, i = gyy * w + rx0, k = y * rw; x < rw; x++, i++, k++) {
+        const al = alpha[i]
+        if (al === 255) {
+          src[k] = 0
+          continue
+        }
+        const gx0 = rx0 + x
+        const fx = xf[gx0]
+        const gx = 1 - fx
+        const x0 = xi0[gx0]
+        const x1 = xi1[gx0]
+        const bb = bB[r0 + x0] * (gx * gy) + bB[r0 + x1] * (fx * gy) + bB[r1 + x0] * (gx * fy) + bB[r1 + x1] * (fx * fy)
+        src[k] = bb * (1 - al / 255)
+      }
+    }
+    boxBlur(src, rw, rh, R2, outB, tmp)
+    for (let y = t.y0; y < t.y1; y++) {
+      for (let x = t.x0, i = y * w + x, k = (y - ry0) * rw + (x - rx0); x < t.x1; x++, i++, k++) {
+        const al = alpha[i]
+        if (al === 0 || al === 255) continue
+        const a = al / 255
+        const bf = outF[k] / (bA[k] + 1e-5)
+        const bb = outB[k] / (1 - bA[k] + 1e-5)
+        const v = bf + a * (image[i * channels + c] / 255 - a * bf - (1 - a) * bb)
+        result[i * 4 + c] = Math.round((v < 0 ? 0 : v > 1 ? 1 : v) * 255)
+      }
+    }
+  }
+}
+
 /**
  * Removes the old background's colour from edge pixels, returning RGBA (A = 255) with the same colours inside and
  * outside the cut-out. Blur-fusion foreground estimation (Forte & Pitié, "Approximate Fast Foreground Colour
@@ -400,57 +610,44 @@ export function decontaminate(
   const { F1, bB1, ax, ay, ws } = blurFusionCoarse(image, channels, alpha, w, h, d, scale)
   const { i0: xi0, i1: xi1, f: xf } = ax
 
-  // Pass 2 at full resolution.
+  // Pass 2 at full resolution, only where it can change a pixel: a pixel with alpha 0 or 255 keeps the photo's colour,
+  // and a soft pixel's result depends on the mask and F1 within R2 of it. So each tile that holds a soft pixel is
+  // filtered with an R2 border, and only the tile's own soft pixels are written.
   const R2 = Math.max(1, Math.round(6 * scale))
   const N = w * h
-  const bA = new Float32Array(N)
-  const src = new Float32Array(N)
-  const outF = new Float32Array(N)
-  const outB = new Float32Array(N)
-  const tmp = new Float32Array(N)
-  for (let i = 0; i < N; i++) src[i] = alpha[i] / 255
-  boxBlur(src, w, h, R2, bA, tmp)
-
   const result = new Uint8ClampedArray(N * 4)
-  for (let c = 0; c < 3; c++) {
-    for (let i = 0; i < N; i++) src[i] = (F1[i * 3 + c] / 255) * (alpha[i] / 255)
-    boxBlur(src, w, h, R2, outF, tmp)
-    const bB = bB1[c]
-    for (let y = 0; y < h; y++) {
-      const r0 = ay.i0[y] * ws
-      const r1 = ay.i1[y] * ws
-      const fy = ay.f[y]
-      const gy = 1 - fy
-      for (let x = 0, i = y * w; x < w; x++, i++) {
-        const al = alpha[i]
-        if (al === 255) {
-          src[i] = 0
-          continue
-        }
-        const fx = xf[x]
-        const gx = 1 - fx
-        const x0 = xi0[x]
-        const x1 = xi1[x]
-        const bb = bB[r0 + x0] * (gx * gy) + bB[r0 + x1] * (fx * gy) + bB[r1 + x0] * (gx * fy) + bB[r1 + x1] * (fx * fy)
-        src[i] = bb * (1 - al / 255)
-      }
-    }
-    boxBlur(src, w, h, R2, outB, tmp)
-    for (let i = 0; i < N; i++) {
-      const o = i * channels
-      const al = alpha[i]
-      if (al === 0 || al === 255) {
-        result[i * 4 + c] = image[o + c]
-        continue
-      }
-      const a = al / 255
-      const bf = outF[i] / (bA[i] + 1e-5)
-      const bb = outB[i] / (1 - bA[i] + 1e-5)
-      const v = bf + a * (image[o + c] / 255 - a * bf - (1 - a) * bb)
-      result[i * 4 + c] = Math.round((v < 0 ? 0 : v > 1 ? 1 : v) * 255)
-    }
+  for (let i = 0; i < N; i++) {
+    const o = i * channels
+    result[i * 4] = image[o]
+    result[i * 4 + 1] = image[o + 1]
+    result[i * 4 + 2] = image[o + 2]
+    result[i * 4 + 3] = 255
   }
-  for (let i = 0; i < N; i++) result[i * 4 + 3] = 255
+
+  const g = 32
+  const cells = scanCells(alpha, w, h, g)
+  const tiles = activeRects(w, h, g * 4, (t) => {
+    for (let cy = t.y0 / g; cy < Math.ceil(t.y1 / g); cy++) {
+      for (let cx = t.x0 / g; cx < Math.ceil(t.x1 / g); cx++) if (cells.soft[cy * cells.cols + cx]) return true
+    }
+    return false
+  })
+  const regions = tiles.map((t) => ({
+    x0: Math.max(0, t.x0 - R2),
+    y0: Math.max(0, t.y0 - R2),
+    x1: Math.min(w, t.x1 + R2),
+    y1: Math.min(h, t.y1 + R2),
+  }))
+  let cap = 0
+  for (const t of regions) cap = Math.max(cap, (t.x1 - t.x0) * (t.y1 - t.y0))
+  const bA = new Float32Array(cap)
+  const src = new Float32Array(cap)
+  const outF = new Float32Array(cap)
+  const outB = new Float32Array(cap)
+  const tmp = new Float32Array(cap)
+
+  const ctx: Pass2 = { image, channels, alpha, w, F1, bB1, ay, xi0, xi1, xf, ws, R2, bA, src, outF, outB, tmp, result }
+  for (let n = 0; n < regions.length; n++) pass2Region(ctx, regions[n], tiles[n])
   return result
 }
 
