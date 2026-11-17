@@ -29,6 +29,7 @@ All colours are CSS custom properties in `src/styles.css`: light on `:root`, dar
 | `--brand-soft` | `#fbe9df` | `#3a1f16` | tinted fills: the drop sheet's glow, the "anything" chip |
 | `--brand-text` | `#a8380a` | `#ff7a4d` | brand-coloured text and links (4.5:1+ on paper, sheet, brand-soft) |
 | `--danger` | `#b8361f` | `#ff8a76` | errors |
+| `--live` / `--live-ring` | `#1f9d55` | `#3ccf7a` | the pulsing "ready" dot under the drop area, nothing else, never text (Israel, 17 Nov 2026: "give the online vibe with the green pulsing circle") |
 | `--check-a` / `--check-b` | `#ffffff` / `#efe9e1` | `#2a2a2e` / `#202024` | transparency checkerboard |
 
 Dark is **neutral charcoal**, no brown cast (Israel, 16 Nov 2026); the brand is the only warm thing on a dark page. Light is warm paper with a persimmon glow.

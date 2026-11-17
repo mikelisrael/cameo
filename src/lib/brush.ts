@@ -1,4 +1,5 @@
 import { boxBlur } from './refine'
+import type { Seg } from './protocol'
 
 export type Rect = { x: number; y: number; w: number; h: number }
 export type MaskPatch = {
@@ -402,6 +403,29 @@ function union(a: Rect | null, b: Rect | null): Rect | null {
   const x = Math.min(a.x, b.x)
   const y = Math.min(a.y, b.y)
   return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y }
+}
+
+/** Applies a segmenter pick to the mask in place: keep raises alpha to the pick, remove lowers it by the pick. */
+export function applyPick(alpha: Uint8ClampedArray, w: number, seg: Seg, mode: 'keep' | 'remove'): MaskPatch | null {
+  const before = new Uint8ClampedArray(seg.w * seg.h)
+  const after = new Uint8ClampedArray(seg.w * seg.h)
+  let changed = false
+  for (let y = 0; y < seg.h; y++) {
+    for (let x = 0; x < seg.w; x++) {
+      const k = y * seg.w + x
+      const o = (seg.y + y) * w + seg.x + x
+      const a = alpha[o]
+      const s = seg.alpha[k]
+      const v = mode === 'keep' ? Math.max(a, s) : Math.min(a, 255 - s)
+      before[k] = a
+      after[k] = v
+      if (v !== a) {
+        alpha[o] = v
+        changed = true
+      }
+    }
+  }
+  return changed ? { x: seg.x, y: seg.y, w: seg.w, h: seg.h, before, after } : null
 }
 
 /** Writes a patch's `before` or `after` pixels into the mask and returns its rect. */

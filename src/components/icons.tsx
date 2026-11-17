@@ -139,6 +139,14 @@ export const HandIcon = (p: P) => (
   </svg>
 )
 
+export const TapIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="m9 9 3.2 10.5 1.8-4.2 4.2-1.8z" />
+    <path d="m14.5 14.5 4 4" />
+    <path d="M6 3.5 7 6M3 6.5l2.5.8M12.5 3.5 11.5 6M16 6.5l-2.5.8" />
+  </svg>
+)
+
 export const EraserIcon = (p: P) => (
   <svg {...base(p)}>
     <path d="m8 20-4.3-4.3a2 2 0 0 1 0-2.8L13 3.6a2 2 0 0 1 2.8 0L20.4 8.2a2 2 0 0 1 0 2.8L11 20.4" />

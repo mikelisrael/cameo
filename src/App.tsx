@@ -3,24 +3,15 @@ import { Compare } from './components/Compare'
 import { EditBar } from './components/EditBar'
 import { Editor, type BrushSettings, type EditorHandle, type Tool } from './components/Editor'
 import { useFileIntake } from './components/DropZone'
-import {
-  AlertIcon,
-  CameraIcon,
-  CheckIcon,
-  LockIcon,
-  MoonIcon,
-  ResetIcon,
-  Spinner,
-  SunIcon,
-  UploadIcon,
-} from './components/icons'
+import { AlertIcon, CameraIcon, LockIcon, MoonIcon, ResetIcon, Spinner, SunIcon, UploadIcon } from './components/icons'
 import { Queue, type Item } from './components/Queue'
 import { Toolbar } from './components/Toolbar'
-import { applyPatch, type MaskPatch } from './lib/brush'
+import { applyPatch, applyPick, type MaskPatch } from './lib/brush'
 import { cutout, downloadName, exportPng } from './lib/compose'
 import { isDirty, newHistory, push, redo, undo, type History } from './lib/history'
 import type { Mask } from './lib/protocol'
 import { useRemover, type Result, type Status } from './lib/useRemover'
+import { useSegmenter } from './lib/useSegmenter'
 import { useTheme } from './lib/useTheme'
 
 /** A 1x1 transparent GIF, shown until a HEIC photo has been decoded. */
@@ -79,6 +70,11 @@ export default function App() {
   const [tool, setTool] = useState<Tool>('erase')
   const [brush, setBrush] = useState<BrushSettings>({ size: 40, softness: 0.25, smart: true })
   const [showOriginal, setShowOriginal] = useState(false)
+  const seg = useSegmenter()
+  const segRef = useRef(seg)
+  segRef.current = seg
+  const [pick, setPick] = useState<'keep' | 'remove'>('keep')
+  const [tapPoint, setTapPoint] = useState<{ x: number; y: number } | null>(null)
   // Bumped on every mask change (strokes, undo, redo, reset): the cut-out is rebuilt from it.
   const [editVersion, setEditVersion] = useState(0)
   // Bumped only when the mask changed outside the editor's own strokes, so it redraws.
@@ -86,6 +82,7 @@ export default function App() {
   const [, rerender] = useReducer((n: number) => n + 1, 0)
   const editorRef = useRef<EditorHandle>(null)
   const fromPicker = useRef(false)
+  const tapSeq = useRef(0) // the latest tap's number, so a slow decode doesn't clear a newer marker
   const [notice, setNotice] = useState<string | null>(null)
   const entries = useRef(new Map<string, Entry>())
   const revealed = useRef(new Set<string>())
@@ -141,6 +138,7 @@ export default function App() {
     e.result?.original.close()
     entries.current.delete(id)
     revealed.current.delete(id)
+    segRef.current.drop(id)
   }
 
   const remove = useCallback((id: string) => {
@@ -273,6 +271,45 @@ export default function App() {
     [selected],
   )
 
+  // Select needs the photo read once; start as soon as the tool is open on a ready image.
+  useEffect(() => {
+    if (view !== 'edit' || tool !== 'select' || !selected) return
+    const r = entries.current.get(selected)?.result
+    if (r) segRef.current.prepare(selected, r.original)
+  }, [view, tool, selected, selectedDone])
+
+  // A tap marker belongs to one image and one tool.
+  useEffect(() => {
+    setTapPoint(null)
+  }, [selected, view, tool])
+
+  const onTap = useCallback(
+    (p: { x: number; y: number }) => {
+      if (tapPoint || !selected) return
+      const id = selected
+      const e = entries.current.get(id)
+      const m = e?.edited
+      if (!e || !m) return
+      const seq = ++tapSeq.current
+      setTapPoint(p)
+      segRef.current
+        .decode(id, p.x, p.y, m.width, m.height)
+        .then((s) => {
+          if (!s || entries.current.get(id) !== e || e.edited !== m) return
+          const patch = applyPick(m.data, m.width, s, pick)
+          if (!patch) return
+          push(e.history, { kind: 'mask', patch })
+          setEditVersion((v) => v + 1)
+          setEditorVersion((v) => v + 1)
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (tapSeq.current === seq) setTapPoint(null) // a newer tap owns the marker now
+        })
+    },
+    [tapPoint, selected, pick],
+  )
+
   const stepHistory = useCallback(
     (dir: 'undo' | 'redo') => {
       const e = selected ? entries.current.get(selected) : undefined
@@ -359,6 +396,9 @@ export default function App() {
     }
     if (!editing || mod || e.altKey) return
     switch (key) {
+      case 's':
+        setTool('select')
+        break
       case 'e':
         setTool('erase')
         break
@@ -523,6 +563,11 @@ export default function App() {
                 onTool={setTool}
                 brush={brush}
                 onBrush={setBrush}
+                pick={pick}
+                onPick={setPick}
+                segState={seg.state}
+                segProgress={seg.progress}
+                onSegRetry={seg.retry}
                 canUndo={current.history.done.length > 0}
                 canRedo={current.history.undone.length > 0}
                 onUndo={() => stepHistory('undo')}
@@ -546,6 +591,8 @@ export default function App() {
                   onShowOriginal={setShowOriginal}
                   version={editorVersion}
                   onStroke={onStroke}
+                  onTap={onTap}
+                  pending={tapPoint}
                 />
               ) : showCompare && current?.result && after ? (
                 <Compare
@@ -682,7 +729,7 @@ function ModelLine({ status, progress, error }: { status: Status; progress: numb
   }
   return (
     <div className="model model--ready" role="status">
-      <CheckIcon width={16} height={16} />
+      <span className="model__live" aria-hidden />
       <span className="model__text">Ready. Next time it starts without the download.</span>
     </div>
   )

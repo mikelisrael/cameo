@@ -47,7 +47,9 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 
 - [x] Zoom and pan in Edit (wheel, pinch, + / −, Fit; double-click fits with Move). Compare keeps its slider and doesn't zoom.
 - [x] **Erase / Restore brushes** with size and softness on the mask (`src/lib/brush.ts`, `src/components/Editor.tsx`). "Smart edges" snaps a stroke to the photo: colours under the stroke's centre vs. the kept/removed colours around it, then a colour guided filter; erase never adds, restore never removes.
-- [ ] **Click to keep / click to remove** (next, its own run: a second model download and a worker protocol change): point prompts with a small segmentation model (SlimSAM in transformers.js) to add or drop a whole object in one click.
+- [x] **Click to keep / click to remove:** the Select tool (Keep | Remove) taps an object; SlimSAM (`Xenova/slimsam-77-uniform`, q8, ~14 MB, CPU) runs in its own lazy worker (`src/worker/segment.worker.ts`, `src/lib/useSegmenter.ts`), the mask is snapped to the photo with the Phase 1 guided filter, one undo step per tap.
+- [ ] Optional from review: a tap racing the eviction of its own image's embedding (3+ images, quick switching) does nothing once; retry the decode once after re-embedding (`useSegmenter.ts` decode).
+- [ ] Optional: the editor doesn't refit when the window resizes or a phone rotates (seen going from desktop to 390 px in a preview); refit on resize while the view is still at Fit.
 - [x] Undo/redo for every brush stroke, background change and Reset (`src/lib/history.ts`, per image, capped at 60 steps / 150 MB). Ctrl/⌘+Z, Ctrl/⌘+Shift+Z, Ctrl+Y.
 - [x] Hold Space, or press and hold Before, to see the original in Edit. Keys in Edit: E erase, R restore, V/H move, [ ] size, + − 0 zoom.
 - [ ] iOS Safari caps one canvas at about 16.7 MP; the 24 MP working cap can pass it (export and the editor both draw at full mask size). Lower the cap on iOS, or tile the export.
