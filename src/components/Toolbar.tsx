@@ -176,7 +176,9 @@ function DeviceDetails({ d, onRetryGpu }: { d: Diagnostics; onRetryGpu: () => vo
           <div>
             <dt>Running on</dt>
             <dd>
-              {d.device === 'webgpu' ? 'Graphics card (WebGPU)' : 'Processor (WebAssembly)'}
+              {d.device === 'webgpu'
+                ? 'Graphics card (WebGPU)'
+                : `Processor (WebAssembly), ${d.threads} ${d.threads === 1 ? 'thread' : 'threads'}`}
               {why && <span className="device__why">{why}</span>}
             </dd>
           </div>

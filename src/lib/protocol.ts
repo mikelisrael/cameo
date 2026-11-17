@@ -7,6 +7,7 @@ export type Diagnostics = {
   model: string // model id in use
   dtype: 'fp16' | 'fp32'
   size: number // the model's input size in px: 1024 for BiRefNet_lite, 512 for the WASM model
+  threads: number // WASM threads ONNX Runtime runs on (1 unless the page is cross-origin isolated)
   gpu?: { vendor: string; architecture: string; description: string; storageBuffers: number; maxBufferMB: number }
 }
 

@@ -14,8 +14,16 @@ function dropOrtWasm(): Plugin {
   }
 }
 
+// Same headers as vercel.json, so dev matches production: ORT only runs WASM on several threads when cross-origin isolated.
+const isolation = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), dropOrtWasm()],
+  server: { headers: isolation },
+  preview: { headers: isolation },
   worker: { format: 'es', plugins: () => [dropOrtWasm()] },
 })

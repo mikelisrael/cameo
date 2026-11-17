@@ -61,8 +61,8 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 
 ## Speed (Israel, 17 November 2026: do 1 and 5 now, keep the rest)
 
-- [ ] **Multithreaded WASM:** send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy` (try `credentialless` first, so the Hugging Face and CDN downloads keep working) from a `vercel.json`, so the page is cross-origin isolated and ONNX Runtime's CPU path uses several threads instead of one (today there is no `vercel.json`, so it runs single-threaded). Check `crossOriginIsolated` and the thread count in "About this device"; expect 2–4× on the CPU path.
-- [ ] **Warm start:** begin the model download and session setup while the drop screen shows, so the first photo doesn't wait for it.
+- [x] (Done: `require-corp`, not `credentialless`, which Safari lacks; every cross-origin load here is CORS. 4 threads seen in a preview.) **Multithreaded WASM:** send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy` (try `credentialless` first, so the Hugging Face and CDN downloads keep working) from a `vercel.json`, so the page is cross-origin isolated and ONNX Runtime's CPU path uses several threads instead of one (today there is no `vercel.json`, so it runs single-threaded). Check `crossOriginIsolated` and the thread count in "About this device"; expect 2–4× on the CPU path.
+- [x] (Already in place: the worker loads on mount and the GPU path runs a warm-up.) **Warm start:** begin the model download and session setup while the drop screen shows, so the first photo doesn't wait for it.
 - Saved for later, best first:
   - [ ] An int8 (quantized) CPU model made with ONNX Runtime's tools and hosted on Hugging Face: about 2–3× faster on WASM and a third of the download; judge the edges on `?bench` before switching.
   - [ ] Run the Phase 1 edge refinement as WebGPU compute (saves ~2–3 s on 12 MP).
