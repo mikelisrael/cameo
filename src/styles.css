@@ -37,30 +37,30 @@
   color-scheme: light;
 }
 
-/* Dark: neutral charcoal with no brown cast (Israel, 16 Nov 2026); the brand brightens and
-   carries dark text, and is the only warm thing on the page. */
+/* Dark: a deep plum-black, never brown (Israel, 16 and 17 Nov 2026); the brand brightens and
+   carries dark text, and is the only saturated colour on the page. */
 :root[data-theme='dark'] {
-  --paper: #111113;
-  --sheet: #19191c;
-  --well: #222226;
-  --ink: #f4f4f5;
-  --ink-2: #b4b4bb;
-  --ink-3: #8e8e96;
-  --line: #2b2b30;
-  --line-strong: #3a3a40;
+  --paper: #120b1b;
+  --sheet: #1a1324;
+  --well: #251d2f;
+  --ink: #f7f4fa;
+  --ink-2: #bcb3c8;
+  --ink-3: #948aa1;
+  --line: #2a2234;
+  --line-strong: #3b3147;
   --brand: #ff7a4d;
   --brand-hover: #ff9470;
-  --brand-ink: #1a120d;
-  --brand-soft: #3a1f16;
+  --brand-ink: #1a0d14;
+  --brand-soft: #3b1a26;
   --live: #3ccf7a;
   --live-ring: rgb(60 207 122 / 0.4);
   --brand-text: #ff7a4d;
   --danger: #ff8a76;
-  --check-a: #2a2a2e;
-  --check-b: #202024;
+  --check-a: #2a2234;
+  --check-b: #1f1828;
   --glow: rgb(255 122 77 / 0.06);
   --lift: 0 0 0 1px rgb(0 0 0 / 0.25), 0 24px 48px -28px rgb(0 0 0 / 0.75);
-  --knob: #f4f4f5;
+  --knob: #f7f4fa;
   color-scheme: dark;
 }
 

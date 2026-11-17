@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 export type Theme = 'light' | 'dark'
 
 const KEY = 'cutout:theme'
-const THEME_COLOR: Record<Theme, string> = { light: '#faf6f1', dark: '#111113' }
+const THEME_COLOR: Record<Theme, string> = { light: '#faf6f1', dark: '#120b1b' }
 
 function saved(): Theme | null {
   try {

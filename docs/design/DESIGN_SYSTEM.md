@@ -16,23 +16,23 @@ All colours are CSS custom properties in `src/styles.css`: light on `:root`, dar
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `--paper` | `#faf6f1` | `#111113` | page background, under a soft `--glow` from the top |
-| `--sheet` | `#ffffff` | `#19191c` | cards: drop sheet, stage, panel |
-| `--well` | `#f1ebe3` | `#222226` | recessed areas, progress track, hover fills, switch track |
-| `--ink` | `#1d1a16` | `#f4f4f5` | text |
-| `--ink-2` | `#5c564d` | `#b4b4bb` | secondary text |
-| `--ink-3` | `#6b655c` | `#8e8e96` | hints, captions (4.5:1 on paper, sheet and well) |
-| `--line` / `--line-strong` | `#e8e0d5` / `#d3c9bb` | `#2b2b30` / `#3a3a40` | hairlines; dashed and control borders |
+| `--paper` | `#faf6f1` | `#120b1b` | page background, under a soft `--glow` from the top |
+| `--sheet` | `#ffffff` | `#1a1324` | cards: drop sheet, stage, panel |
+| `--well` | `#f1ebe3` | `#251d2f` | recessed areas, progress track, hover fills, switch track |
+| `--ink` | `#1d1a16` | `#f7f4fa` | text |
+| `--ink-2` | `#5c564d` | `#bcb3c8` | secondary text |
+| `--ink-3` | `#6b655c` | `#948aa1` | hints, captions (4.5:1 on paper, sheet and well) |
+| `--line` / `--line-strong` | `#e8e0d5` / `#d3c9bb` | `#2a2234` / `#3b3147` | hairlines; dashed and control borders |
 | `--brand` | `#c2410c` | `#ff7a4d` | persimmon: primary buttons, selected rings, focus, progress |
-| `--brand-ink` | `#ffffff` | `#1a120d` | text on `--brand` (5.2:1 / 7.2:1) |
+| `--brand-ink` | `#ffffff` | `#1a0d14` | text on `--brand` (5.2:1 / 7.3:1) |
 | `--brand-hover` | `#a8380a` | `#ff9470` | primary hover |
-| `--brand-soft` | `#fbe9df` | `#3a1f16` | tinted fills: the drop sheet's glow, the "anything" chip |
+| `--brand-soft` | `#fbe9df` | `#3b1a26` | tinted fills: the drop sheet's glow, the "anything" chip |
 | `--brand-text` | `#a8380a` | `#ff7a4d` | brand-coloured text and links (4.5:1+ on paper, sheet, brand-soft) |
 | `--danger` | `#b8361f` | `#ff8a76` | errors |
 | `--live` / `--live-ring` | `#1f9d55` | `#3ccf7a` | the pulsing "ready" dot under the drop area, nothing else, never text (Israel, 17 Nov 2026: "give the online vibe with the green pulsing circle") |
-| `--check-a` / `--check-b` | `#ffffff` / `#efe9e1` | `#2a2a2e` / `#202024` | transparency checkerboard |
+| `--check-a` / `--check-b` | `#ffffff` / `#efe9e1` | `#2a2234` / `#1f1828` | transparency checkerboard |
 
-Dark is **neutral charcoal**, no brown cast (Israel, 16 Nov 2026); the brand is the only warm thing on a dark page. Light is warm paper with a persimmon glow.
+Dark is a **deep plum-black** (Israel, 17 Nov 2026, from a reference he liked: page `#120b1b`, lifted surfaces a step lighter, bright near-white type), never brown (16 Nov 2026); persimmon is still the only warm, saturated thing on a dark page. Light is warm paper with a persimmon glow.
 
 ## 3. Type
 
