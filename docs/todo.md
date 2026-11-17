@@ -57,7 +57,7 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 
 ## How it works (Israel, 17 November 2026: "intuitive and responsive, alive and not ai slop")
 
-- [ ] A "How it works" page, reached from the header and the footer: what happens to a photo, step by step (it opens on your device, the model finds the subject, the edges are cleaned, you fix with brushes, you download), shown with the app's own drawing, not stock icons. Says plainly what's stored (the model, two settings) and what never leaves the device. Alive means it moves as you scroll or tap, at phone width first; reduced motion rests at the end state. No feature grid, no "AI-powered ✨".
+- [x] (Done: `/how-it-works`, opened in-app so photos are kept; one drawn persimmon in five scroll-driven frames.) A "How it works" page, reached from the header and the footer: what happens to a photo, step by step (it opens on your device, the model finds the subject, the edges are cleaned, you fix with brushes, you download), shown with the app's own drawing, not stock icons. Says plainly what's stored (the model, two settings) and what never leaves the device. Alive means it moves as you scroll or tap, at phone width first; reduced motion rests at the end state. No feature grid, no "AI-powered ✨".
 
 ## Speed (Israel, 17 November 2026: do 1 and 5 now, keep the rest)
 
