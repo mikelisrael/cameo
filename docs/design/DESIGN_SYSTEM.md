@@ -36,7 +36,7 @@ Dark is **neutral charcoal**, no brown cast (Israel, 16 Nov 2026); the brand is 
 
 ## 3. Type
 
-- **Display:** Bricolage Grotesque 600, tracking -0.02em. Only the empty-state headline and the wordmark.
+- **Display:** Bricolage Grotesque 600, tracking -0.02em. Only the empty-state headline, the wordmark and a page's title (How it works).
 - **UI:** Geist 400/500/600. Body 15px, small 13px.
 - **Figures:** Geist Mono with tabular numerals, for pixel sizes and percentages.
 
@@ -52,6 +52,7 @@ Loaded from Google Fonts in `index.html`. Nothing else.
 
 - Standard: 180ms `cubic-bezier(0.4, 0, 0.2, 1)` for colour, border and opacity.
 - Selection rings: 280ms on the same curve.
+- How it works: each step's drawing moves as the step scrolls into view (CSS scroll-driven animations on `view-timeline: --how-step`); resting styles are the end state, so reduced motion and older browsers see each frame finished.
 - The reveal: the divider travels from the right edge to the middle in 1s `cubic-bezier(0.65, 0, 0.35, 1)`.
 - Processing: a soft light band sweeps over the original, 1.8s, looping.
 - `prefers-reduced-motion: reduce`: the reveal lands at its end state, the band and spinners rest.

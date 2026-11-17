@@ -261,6 +261,8 @@ export function Editor({
     fit()
     const ro = new ResizeObserver(() => {
       measure()
+      // A hidden editor (e.g. behind the How it works page) measures 0×0; leave the view as it was.
+      if (!geo.current.vw || !geo.current.vh) return
       if (!touched.current) {
         fit()
         return

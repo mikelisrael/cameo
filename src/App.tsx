@@ -1,18 +1,31 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { Compare } from './components/Compare'
 import { EditBar } from './components/EditBar'
 import { Editor, type BrushSettings, type EditorHandle, type Tool } from './components/Editor'
 import { useFileIntake } from './components/DropZone'
-import { AlertIcon, CameraIcon, LockIcon, MoonIcon, ResetIcon, Spinner, SunIcon, UploadIcon } from './components/icons'
+import {
+  AlertIcon,
+  CameraIcon,
+  InfoIcon,
+  LockIcon,
+  MoonIcon,
+  ResetIcon,
+  Spinner,
+  SunIcon,
+  UploadIcon,
+} from './components/icons'
 import { Queue, type Item } from './components/Queue'
 import { Toolbar } from './components/Toolbar'
 import { applyPatch, applyPick, type MaskPatch } from './lib/brush'
 import { cutout, downloadName, exportPng } from './lib/compose'
 import { isDirty, newHistory, push, redo, undo, type History } from './lib/history'
 import type { Mask } from './lib/protocol'
+import { useHowItWorks } from './lib/useHowItWorks'
 import { useRemover, type Result, type Status } from './lib/useRemover'
 import { useSegmenter } from './lib/useSegmenter'
 import { useTheme } from './lib/useTheme'
+
+const HowItWorks = lazy(() => import('./components/HowItWorks'))
 
 /** A 1x1 transparent GIF, shown until a HEIC photo has been decoded. */
 const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=='
@@ -53,6 +66,10 @@ const isActivatable = (t: EventTarget | null) => t instanceof Element && !!t.clo
 export default function App() {
   const { status, progress, diagnostics, fellBack, error, process, retryGpu } = useRemover()
   const theme = useTheme()
+  const how = useHowItWorks()
+  // Mirrors how.isOpen for handlers registered once or owned elsewhere (paste lives in useFileIntake).
+  const howOpen = useRef(how.isOpen)
+  howOpen.current = how.isOpen
   const [items, setItems] = useState<Item[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [fill, setFill] = useState<string | null>(null)
@@ -176,7 +193,21 @@ export default function App() {
     return () => clearTimeout(t)
   }, [notice])
 
-  const intake = useFileIntake(onFiles, onReject)
+  // The page takes no pasted or dropped photos while it shows.
+  const intake = useFileIntake(
+    useCallback(
+      (files: File[]) => {
+        if (!howOpen.current) onFiles(files)
+      },
+      [onFiles],
+    ),
+    useCallback(
+      (names: string[]) => {
+        if (!howOpen.current) onReject(names)
+      },
+      [onReject],
+    ),
+  )
 
   // Render the selected cut-out with the chosen background.
   const selectedItem = items.find((i) => i.id === selected)
@@ -364,6 +395,7 @@ export default function App() {
   // Keyboard: undo/redo in both views; tools, brush size, zoom and hold-Space-for-original in Edit.
   const onKey = useRef<(e: KeyboardEvent, down: boolean) => void>(() => {})
   onKey.current = (e, down) => {
+    if (howOpen.current) return
     if (!hasResult) return
     const t = e.target as HTMLElement | null
     // Letting go of Space ends the peek wherever the keyup lands (focus may have moved since).
@@ -461,7 +493,7 @@ export default function App() {
   const hasItems = items.length > 0
 
   return (
-    <div className="app" {...(hasItems ? intake.dragProps : {})}>
+    <div className="app" {...(hasItems && !how.isOpen ? intake.dragProps : {})}>
       {intake.picker}
 
       <header className="header">
@@ -483,6 +515,20 @@ export default function App() {
               </button>
             </>
           )}
+          {!how.isOpen && (
+            <a
+              className="button button--ghost"
+              href="/how-it-works"
+              onClick={(e) => {
+                e.preventDefault()
+                how.open()
+              }}
+              aria-label="How it works"
+            >
+              <InfoIcon />
+              <span className="hide-sm">How it works</span>
+            </a>
+          )}
           {/* Light / dark switch: the thumb slides under the active icon. */}
           <button
             type="button"
@@ -499,161 +545,189 @@ export default function App() {
         </div>
       </header>
 
-      {notice && (
-        <p className="notice" role="status">
-          <AlertIcon width={16} height={16} />
-          {notice}
-        </p>
+      {how.isOpen && (
+        <Suspense fallback={null}>
+          <HowItWorks
+            hasItems={hasItems}
+            onClose={how.close}
+            onChoose={() => {
+              how.close()
+              intake.open()
+            }}
+          />
+        </Suspense>
       )}
 
-      {!hasItems ? (
-        <main className="empty">
-          <div className={`sheet drop${intake.over ? ' drop--over' : ''}`} {...intake.dragProps}>
-            <div className="drop__inner">
-              <h1 className="empty__title">
-                Lift <span className="cutword">anything</span> off its background.
-              </h1>
-              <p className="empty__lede">
-                Drop images here, paste one, or choose from your files. It all happens on your device, so nothing is
-                uploaded.
-              </p>
-              <div className="empty__actions">
-                <button type="button" className="button button--primary button--lg" onClick={intake.open}>
-                  <UploadIcon />
-                  Choose images
-                </button>
-                <button
-                  type="button"
-                  className="button button--quiet button--lg only-touch"
-                  onClick={intake.openCamera}
-                >
-                  <CameraIcon />
-                  Take a photo
-                </button>
-                <span className="empty__or">
-                  or paste with <kbd>{isMac ? '⌘' : 'Ctrl'}</kbd> <kbd>V</kbd>
-                </span>
-              </div>
-              <p className="empty__formats">
-                <span className="nowrap">PNG, JPG, WebP, HEIC or AVIF</span> ·{' '}
-                <span className="nowrap">as many as you like</span>
-              </p>
-            </div>
-            <ModelLine status={status} progress={progress} error={error} />
-          </div>
-        </main>
-      ) : null}
+      <div className="app__main" hidden={how.isOpen}>
+        {notice && (
+          <p className="notice" role="status">
+            <AlertIcon width={16} height={16} />
+            {notice}
+          </p>
+        )}
 
-      {!hasItems ? (
-        <footer className="footer">
-          <span className="footer__item">
-            <LockIcon width={14} height={14} />
-            Your photos stay on this device
-          </span>
-          <span className="footer__dot" aria-hidden="true">
-            ·
-          </span>
-          <a className="footer__link" href="https://github.com/mikelisrael/cameo" target="_blank" rel="noreferrer">
-            Code on GitHub
-          </a>
-        </footer>
-      ) : (
-        <main className="workspace">
-          <section className="stage-col" aria-label="Preview">
-            {current?.result && (
-              <EditBar
-                view={view}
-                onView={changeView}
-                tool={tool}
-                onTool={setTool}
-                brush={brush}
-                onBrush={setBrush}
-                pick={pick}
-                onPick={setPick}
-                segState={seg.state}
-                segProgress={seg.progress}
-                onSegRetry={seg.retry}
-                canUndo={current.history.done.length > 0}
-                canRedo={current.history.undone.length > 0}
-                onUndo={() => stepHistory('undo')}
-                onRedo={() => stepHistory('redo')}
-                canReset={!!current.edited && isDirty(current.history)}
-                onReset={resetEdits}
-              />
-            )}
-            <div className="sheet stage">
-              {(view === 'edit' || compareCatchingUp) && current?.result && current.edited ? (
-                <Editor
-                  key={selected}
-                  ref={editorRef}
-                  original={current.result.original}
-                  mask={current.edited}
-                  colors={current.result.colors}
-                  fill={fill}
+        {!hasItems ? (
+          <main className="empty">
+            <div className={`sheet drop${intake.over ? ' drop--over' : ''}`} {...intake.dragProps}>
+              <div className="drop__inner">
+                <h1 className="empty__title">
+                  Lift <span className="cutword">anything</span> off its background.
+                </h1>
+                <p className="empty__lede">
+                  Drop images here, paste one, or choose from your files. It all happens on your device, so nothing is
+                  uploaded.
+                </p>
+                <div className="empty__actions">
+                  <button type="button" className="button button--primary button--lg" onClick={intake.open}>
+                    <UploadIcon />
+                    Choose images
+                  </button>
+                  <button
+                    type="button"
+                    className="button button--quiet button--lg only-touch"
+                    onClick={intake.openCamera}
+                  >
+                    <CameraIcon />
+                    Take a photo
+                  </button>
+                  <span className="empty__or">
+                    or paste with <kbd>{isMac ? '⌘' : 'Ctrl'}</kbd> <kbd>V</kbd>
+                  </span>
+                </div>
+                <p className="empty__formats">
+                  <span className="nowrap">PNG, JPG, WebP, HEIC or AVIF</span> ·{' '}
+                  <span className="nowrap">as many as you like</span>
+                </p>
+              </div>
+              <ModelLine status={status} progress={progress} error={error} />
+            </div>
+          </main>
+        ) : null}
+
+        {!hasItems ? (
+          <footer className="footer">
+            <span className="footer__item">
+              <LockIcon width={14} height={14} />
+              Your photos stay on this device
+            </span>
+            <span className="footer__dot" aria-hidden="true">
+              ·
+            </span>
+            <a
+              className="footer__link"
+              href="/how-it-works"
+              onClick={(e) => {
+                e.preventDefault()
+                how.open()
+              }}
+            >
+              How it works
+            </a>
+            <span className="footer__dot" aria-hidden="true">
+              ·
+            </span>
+            <a className="footer__link" href="https://github.com/mikelisrael/cameo" target="_blank" rel="noreferrer">
+              Code on GitHub
+            </a>
+          </footer>
+        ) : (
+          <main className="workspace">
+            <section className="stage-col" aria-label="Preview">
+              {current?.result && (
+                <EditBar
+                  view={view}
+                  onView={changeView}
                   tool={tool}
+                  onTool={setTool}
                   brush={brush}
-                  showOriginal={showOriginal}
-                  onShowOriginal={setShowOriginal}
-                  version={editorVersion}
-                  onStroke={onStroke}
-                  onTap={onTap}
-                  pending={tapPoint}
-                  still={view !== 'edit'}
-                />
-              ) : showCompare && current?.result && after ? (
-                <Compare
-                  key={selected}
-                  before={current.url}
-                  after={after.url}
-                  width={current.result.original.width}
-                  height={current.result.original.height}
-                  reveal={reveal}
-                />
-              ) : selectedItem?.state === 'error' ? (
-                <Failure name={selectedItem.name} message={selectedItem.error} onRetry={intake.open} />
-              ) : pending ? (
-                <Pending item={pending} status={status} progress={progress} />
-              ) : (
-                <Failure
-                  name={items[items.length - 1]?.name}
-                  message={items[items.length - 1]?.error}
-                  onRetry={intake.open}
+                  onBrush={setBrush}
+                  pick={pick}
+                  onPick={setPick}
+                  segState={seg.state}
+                  segProgress={seg.progress}
+                  onSegRetry={seg.retry}
+                  canUndo={current.history.done.length > 0}
+                  canRedo={current.history.undone.length > 0}
+                  onUndo={() => stepHistory('undo')}
+                  onRedo={() => stepHistory('redo')}
+                  canReset={!!current.edited && isDirty(current.history)}
+                  onReset={resetEdits}
                 />
               )}
+              <div className="sheet stage">
+                {(view === 'edit' || compareCatchingUp) && current?.result && current.edited ? (
+                  <Editor
+                    key={selected}
+                    ref={editorRef}
+                    original={current.result.original}
+                    mask={current.edited}
+                    colors={current.result.colors}
+                    fill={fill}
+                    tool={tool}
+                    brush={brush}
+                    showOriginal={showOriginal}
+                    onShowOriginal={setShowOriginal}
+                    version={editorVersion}
+                    onStroke={onStroke}
+                    onTap={onTap}
+                    pending={tapPoint}
+                    still={view !== 'edit'}
+                  />
+                ) : showCompare && current?.result && after ? (
+                  <Compare
+                    key={selected}
+                    before={current.url}
+                    after={after.url}
+                    width={current.result.original.width}
+                    height={current.result.original.height}
+                    reveal={reveal}
+                  />
+                ) : selectedItem?.state === 'error' ? (
+                  <Failure name={selectedItem.name} message={selectedItem.error} onRetry={intake.open} />
+                ) : pending ? (
+                  <Pending item={pending} status={status} progress={progress} />
+                ) : (
+                  <Failure
+                    name={items[items.length - 1]?.name}
+                    message={items[items.length - 1]?.error}
+                    onRetry={intake.open}
+                  />
+                )}
+              </div>
+              <Queue items={items} selected={selected} onSelect={setSelected} onRemove={remove} onAdd={intake.open} />
+            </section>
+
+            {current?.result ? (
+              <Toolbar
+                fill={fill}
+                custom={custom}
+                onFill={changeFill}
+                onCustom={changeCustom}
+                onDownload={save}
+                size={{ width: current.result.original.width, height: current.result.original.height }}
+                diagnostics={diagnostics}
+                fellBack={fellBack}
+                onRetryGpu={retryGpu}
+                scaled={selectedItem?.scaled}
+                share={shareFiles}
+              />
+            ) : (
+              <aside className="panel panel--waiting">
+                <p className="panel__hint">Background colours and the download appear here once a cut-out is ready.</p>
+              </aside>
+            )}
+          </main>
+        )}
+
+        {hasItems && intake.over && (
+          <div className="veil" aria-hidden="true">
+            <div className="veil__box">
+              <UploadIcon width={28} height={28} />
+              Drop to add
             </div>
-            <Queue items={items} selected={selected} onSelect={setSelected} onRemove={remove} onAdd={intake.open} />
-          </section>
-
-          {current?.result ? (
-            <Toolbar
-              fill={fill}
-              custom={custom}
-              onFill={changeFill}
-              onCustom={changeCustom}
-              onDownload={save}
-              size={{ width: current.result.original.width, height: current.result.original.height }}
-              diagnostics={diagnostics}
-              fellBack={fellBack}
-              onRetryGpu={retryGpu}
-              scaled={selectedItem?.scaled}
-              share={shareFiles}
-            />
-          ) : (
-            <aside className="panel panel--waiting">
-              <p className="panel__hint">Background colours and the download appear here once a cut-out is ready.</p>
-            </aside>
-          )}
-        </main>
-      )}
-
-      {hasItems && intake.over && (
-        <div className="veil" aria-hidden="true">
-          <div className="veil__box">
-            <UploadIcon width={28} height={28} />
-            Drop to add
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
