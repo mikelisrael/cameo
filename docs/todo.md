@@ -72,7 +72,8 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 ## Phase 3: a picture ready for where it's going (output)
 
 - [ ] **Shadows:** soft contact shadow and drop shadow, made on-device from the mask, with strength and angle.
-- [ ] **More backgrounds:** your own image, the original blurred (portrait-mode look), gradients.
+- [x] **More backgrounds:** blurred photo (portrait-mode look), Studio / Sky / Sunset gradients, your own image (kept in memory only), all through undo like a colour (`src/lib/background.ts`).
+- [ ] Optional from review: the background image picker uses `accept="image/*"`; use `ACCEPT_ATTR` so HEIC/AVIF files without a MIME type aren't greyed out on Windows. A pick that finishes after Start over should be dropped.
 - [x] **Crop and size presets:** Whole · Fit (trimmed to the subject with room) · 1:1 (1080, shops) · 4:5 (1080×1350, Instagram post) · 9:16 (1080×1920, story/status), subject centred on the chosen background, a preview in the panel; download, share and ZIP use it.
 - [ ] Passport photo preset: needs Israel's call on which country's rules (size, head height, background).
 - [ ] **Sticker export:** white outline + WebP 512×512 for WhatsApp stickers.

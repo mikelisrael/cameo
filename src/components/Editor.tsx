@@ -10,6 +10,7 @@ import {
   type Ref,
   type SVGProps,
 } from 'react'
+import { cssBackground } from '../lib/background'
 import { Stroke, type MaskPatch, type Rect } from '../lib/brush'
 import type { Mask } from '../lib/protocol'
 
@@ -22,6 +23,9 @@ type Props = {
   mask: Mask
   colors?: Uint8ClampedArray
   fill: string | null
+  /** Object URL of the blurred photo, and of the pictures the user picked, for those backgrounds. */
+  blurUrl?: string | null
+  imageUrls?: Map<string, string>
   tool: Tool
   brush: BrushSettings
   showOriginal: boolean
@@ -80,6 +84,8 @@ export function Editor({
   mask,
   colors,
   fill,
+  blurUrl,
+  imageUrls,
   tool,
   brush,
   showOriginal,
@@ -550,7 +556,7 @@ export function Editor({
   }
 
   const ghostOpacity = showOriginal ? 1 : tool === 'move' || tool === 'select' ? 0 : 0.28
-  const bgStyle: CSSProperties = fill ? { backgroundColor: fill, backgroundImage: 'none' } : {}
+  const bgStyle: CSSProperties = cssBackground(fill, { blurUrl, imageUrls })
 
   return (
     <div
