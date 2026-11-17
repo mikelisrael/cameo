@@ -286,6 +286,90 @@ export function exportImage(
   )
 }
 
+/** WhatsApp sticker rules: 512 px square, 16 px margin, at most 100 KB. The outline sits inside the margin. */
+const STICKER = 512
+const STICKER_MARGIN = 16
+const STICKER_OUTLINE = 10
+const STICKER_MAX_BYTES = 100_000
+
+/** Where the subject lands on the sticker: its box scaled to fit inside the margin and outline, centred. */
+export function stickerFit(box: Box | null, photoW: number, photoH: number) {
+  const r = box ?? { x: 0, y: 0, w: photoW, h: photoH }
+  const inner = STICKER - 2 * (STICKER_MARGIN + STICKER_OUTLINE)
+  const k = Math.min(inner / r.w, inner / r.h)
+  const dw = Math.max(1, Math.round(r.w * k))
+  const dh = Math.max(1, Math.round(r.h * k))
+  return {
+    sx: r.x,
+    sy: r.y,
+    sw: r.w,
+    sh: r.h,
+    dx: Math.round((STICKER - dw) / 2),
+    dy: Math.round((STICKER - dh) / 2),
+    dw,
+    dh,
+  }
+}
+
+function encode(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality))
+}
+
+/** A 512 px transparent sticker: the cut-out with a white outline all round, as WebP (PNG where WebP can't be made). */
+export async function exportSticker(original: ImageBitmap, mask: Mask, colors?: Uint8ClampedArray): Promise<Blob> {
+  const l = stickerFit(photoBox(mask, original.width, original.height), original.width, original.height)
+  const full = cutout(original, mask, undefined, colors)
+  const subject = document.createElement('canvas')
+  subject.width = subject.height = STICKER
+  const sc = subject.getContext('2d')!
+  sc.imageSmoothingQuality = 'high'
+  sc.drawImage(full, l.sx, l.sy, l.sw, l.sh, l.dx, l.dy, l.dw, l.dh)
+  full.width = full.height = 0
+
+  // The subject as a flat white shape, stamped round a circle to grow the outline.
+  const white = document.createElement('canvas')
+  white.width = white.height = STICKER
+  const wc = white.getContext('2d')!
+  wc.drawImage(subject, 0, 0)
+  wc.globalCompositeOperation = 'source-in'
+  wc.fillStyle = '#ffffff'
+  wc.fillRect(0, 0, STICKER, STICKER)
+
+  const out = document.createElement('canvas')
+  out.width = out.height = STICKER
+  const oc = out.getContext('2d')!
+  const STAMPS = 24
+  for (let i = 0; i < STAMPS; i++) {
+    const a = (i / STAMPS) * Math.PI * 2
+    oc.drawImage(white, Math.cos(a) * STICKER_OUTLINE, Math.sin(a) * STICKER_OUTLINE)
+  }
+  // A smaller ring fills the gaps the outer stamps leave on thin parts.
+  for (let i = 0; i < STAMPS; i++) {
+    const a = (i / STAMPS) * Math.PI * 2
+    oc.drawImage(white, Math.cos(a) * STICKER_OUTLINE * 0.5, Math.sin(a) * STICKER_OUTLINE * 0.5)
+  }
+  oc.drawImage(subject, 0, 0)
+  white.width = white.height = 0
+  subject.width = subject.height = 0
+
+  try {
+    if (!(await supportsWebp())) {
+      const png = await encode(out, 'image/png')
+      if (!png) throw new Error('Could not encode the sticker')
+      return png
+    }
+    let blob: Blob | null = null
+    for (const q of [0.8, 0.6, 0.45]) {
+      blob = (await encode(out, 'image/webp', q)) ?? blob
+      if (blob && blob.size <= STICKER_MAX_BYTES) break
+    }
+    if (!blob) throw new Error('Could not encode the sticker')
+    return blob
+  } finally {
+    out.width = out.height = 0
+  }
+}
+
 let webpProbe: Promise<boolean> | undefined
 
 /** Whether this browser can encode WebP (Safari silently hands back a PNG). Probed once. */
@@ -304,6 +388,10 @@ export function supportsWebp(): Promise<boolean> {
 
 export function downloadName(originalName: string, format: Format): string {
   return `${originalName.replace(/\.[^.]+$/, '') || 'image'}-nobg.${format}`
+}
+
+export function stickerName(originalName: string, blob: Blob): string {
+  return `${originalName.replace(/\.[^.]+$/, '') || 'image'}-sticker.${blob.type === 'image/webp' ? 'webp' : 'png'}`
 }
 
 /** Stores the cut-outs in one ZIP, uncompressed (they are already compressed images). */
