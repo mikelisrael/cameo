@@ -2787,3 +2787,23 @@ kbd {
     opacity: 0;
   }
 }
+
+/* Shadow sliders in the side panel: the Edit bar's slider, filling the column. */
+.panel__sliders {
+  display: flex;
+  flex-direction: column;
+}
+
+.panel__sliders .editbar__slider {
+  /* The edit bar's flex basis (150px, for a row) would become height in this column. */
+  flex: none;
+  grid-template-columns: 64px 1fr 5ch;
+  min-width: 0;
+  max-width: none;
+}
+
+.panel__sliders .editbar__val {
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

@@ -1,6 +1,63 @@
 import { paintBackground } from './background'
 import type { Mask } from './protocol'
 
+/** A shadow made from the cut-out itself. Angle 0 is light from the top (the shadow falls down). */
+export type Shadow = { kind: 'none' | 'contact' | 'drop'; strength: number; angle: number }
+
+export const NO_SHADOW: Shadow = { kind: 'none', strength: 0.5, angle: 35 }
+
+/** Equality key for pre-render matching; the strength and angle only count when there is a shadow. */
+export function shadowKey(s: Shadow): string {
+  if (s.kind === 'none') return 'none'
+  return `${s.kind}:${s.strength.toFixed(2)}:${s.kind === 'drop' ? Math.round(s.angle) : 0}`
+}
+
+/**
+ * Paints the shadow in output coordinates, before the subject. `box` is the subject's box on the
+ * output; `src` and `dst` are the same rectangles `drawImage` uses for the subject itself.
+ */
+function paintShadow(
+  ctx: CanvasRenderingContext2D,
+  subject: HTMLCanvasElement,
+  box: Box,
+  src: { sx: number; sy: number; sw: number; sh: number },
+  dst: { dx: number; dy: number; dw: number; dh: number },
+  outW: number,
+  shadow: Shadow,
+) {
+  const strength = Math.min(1, Math.max(0, shadow.strength))
+  if (shadow.kind === 'none' || strength === 0) return
+  if (shadow.kind === 'contact') {
+    const rx = 0.46 * box.w
+    const ry = Math.max(4, 0.045 * box.h)
+    ctx.save()
+    ctx.translate(box.x + box.w / 2, box.y + box.h - 0.02 * box.h)
+    // A circle scaled into an oval, so the radial gradient is elliptical too.
+    ctx.scale(rx, ry)
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1)
+    g.addColorStop(0, `rgba(0,0,0,${0.55 * strength})`)
+    g.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.arc(0, 0, 1, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+    return
+  }
+  const size = Math.max(box.w, box.h)
+  const rad = (shadow.angle * Math.PI) / 180
+  const dist = 0.04 * size
+  // Draw the subject off-canvas and shift only its shadow back on, so the subject isn't drawn twice.
+  const off = outW + Math.ceil(size)
+  ctx.save()
+  ctx.shadowColor = `rgba(0,0,0,${0.45 * strength})`
+  ctx.shadowBlur = 0.03 * size
+  ctx.shadowOffsetX = Math.sin(rad) * dist + off
+  ctx.shadowOffsetY = Math.cos(rad) * dist
+  ctx.drawImage(subject, src.sx, src.sy, src.sw, src.sh, dst.dx - off, dst.dy, dst.dw, dst.dh)
+  ctx.restore()
+}
+
 /** Draws the original and applies the mask as alpha, at the original resolution. */
 export function cutout(
   original: ImageBitmap,
@@ -8,6 +65,7 @@ export function cutout(
   fill?: string,
   colors?: Uint8ClampedArray,
   images?: Map<string, ImageBitmap>,
+  shadow: Shadow = NO_SHADOW,
 ): HTMLCanvasElement {
   const w = original.width
   const h = original.height
@@ -53,13 +111,17 @@ export function cutout(
   // iOS counts every canvas's memory until GC; zeroing the size frees it now.
   small.width = small.height = 0
 
-  if (!fill) return subject
+  if (!fill && shadow.kind === 'none') return subject
 
   const out = document.createElement('canvas')
   out.width = w
   out.height = h
   const o = out.getContext('2d')!
-  paintBackground(o, fill, w, h, { original, images })
+  if (fill) paintBackground(o, fill, w, h, { original, images })
+  const box = photoBox(mask, w, h)
+  if (box) {
+    paintShadow(o, subject, box, { sx: 0, sy: 0, sw: w, sh: h }, { dx: 0, dy: 0, dw: w, dh: h }, w, shadow)
+  }
   o.drawImage(subject, 0, 0)
   subject.width = subject.height = 0
   return out
@@ -181,14 +243,16 @@ export function exportImage(
   format: Format,
   frame: Frame = 'photo',
   images?: Map<string, ImageBitmap>,
+  shadow: Shadow = NO_SHADOW,
 ): Promise<Blob> {
   // JPG has no transparency: without a picked background it gets white rather than black.
   const background = fill ?? (format === 'jpg' ? '#ffffff' : undefined)
   let canvas: HTMLCanvasElement
   if (frame === 'photo') {
-    canvas = cutout(original, mask, background, colors, images)
+    canvas = cutout(original, mask, background, colors, images, shadow)
   } else {
-    const l = layout(frame, photoBox(mask, original.width, original.height), original.width, original.height)
+    const box = photoBox(mask, original.width, original.height)
+    const l = layout(frame, box, original.width, original.height)
     const subject = cutout(original, mask, undefined, colors)
     canvas = document.createElement('canvas')
     canvas.width = l.outW
@@ -198,6 +262,13 @@ export function exportImage(
       paintBackground(c, background, l.outW, l.outH, { original, images })
     }
     c.imageSmoothingQuality = 'high'
+    if (box) {
+      // The subject's box in output pixels: the photo box mapped through the same crop and scale.
+      const kx = l.dw / l.sw
+      const ky = l.dh / l.sh
+      const outBox = { x: l.dx + (box.x - l.sx) * kx, y: l.dy + (box.y - l.sy) * ky, w: box.w * kx, h: box.h * ky }
+      paintShadow(c, subject, outBox, l, l, l.outW, shadow)
+    }
     c.drawImage(subject, l.sx, l.sy, l.sw, l.sh, l.dx, l.dy, l.dw, l.dh)
     subject.width = subject.height = 0
   }

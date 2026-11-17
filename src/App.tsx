@@ -18,7 +18,18 @@ import { Queue, type Item } from './components/Queue'
 import { Toolbar } from './components/Toolbar'
 import { paintBackground } from './lib/background'
 import { applyPatch, applyPick, type MaskPatch } from './lib/brush'
-import { downloadName, exportImage, frameSize, supportsWebp, zipCutouts, type Format, type Frame } from './lib/compose'
+import {
+  NO_SHADOW,
+  downloadName,
+  exportImage,
+  frameSize,
+  shadowKey,
+  supportsWebp,
+  zipCutouts,
+  type Format,
+  type Frame,
+  type Shadow,
+} from './lib/compose'
 import { decodeImage } from './lib/decode'
 import { isDirty, newHistory, push, redo, undo, type History } from './lib/history'
 import type { Mask } from './lib/protocol'
@@ -42,6 +53,9 @@ type Entry = {
 }
 
 type View = 'compare' | 'edit'
+
+/** How long a change must sit still before its full-size render starts. */
+const RENDER_DELAY = 200
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent)
 
@@ -79,6 +93,8 @@ export default function App() {
   // Not remembered between visits.
   const [format, setFormat] = useState<Format>('png')
   const [frame, setFrame] = useState<Frame>('photo')
+  const [shadow, setShadow] = useState<Shadow>(NO_SHADOW)
+  const shadowId = shadowKey(shadow)
   const [webp, setWebp] = useState(false)
   const [zipping, setZipping] = useState(false)
   // The selected cut-out, rendered at full size with the chosen background: shown on stage and
@@ -88,6 +104,7 @@ export default function App() {
     fill: string | null
     version: number
     format: Format
+    shadow: string
     url: string
     blob: Blob
   } | null>(null)
@@ -98,6 +115,7 @@ export default function App() {
     version: number
     format: Format
     frame: Frame
+    shadow: string
     url: string
     blob: Blob
     width: number
@@ -283,17 +301,23 @@ export default function App() {
     if (view === 'edit') return
     let cancelled = false
     const version = editVersion
-    exportImage(r.original, e.edited ?? r.mask, fill ?? undefined, r.colors, format, 'photo', images.current)
-      .then((blob) => {
-        // A superseded run never makes a URL, so there is nothing to revoke for it.
-        if (cancelled) return
-        setAfter({ id, fill, version, format, url: URL.createObjectURL(blob), blob })
-      })
-      .catch(() => {})
+    // Wait for the last change to settle, so dragging a slider doesn't start an encode per step.
+    const timer = setTimeout(() => {
+      exportImage(r.original, e.edited ?? r.mask, fill ?? undefined, r.colors, format, 'photo', images.current, shadow)
+        .then((blob) => {
+          // A superseded run never makes a URL, so there is nothing to revoke for it.
+          if (cancelled) return
+          setAfter({ id, fill, version, format, shadow: shadowId, url: URL.createObjectURL(blob), blob })
+        })
+        .catch(() => {})
+    }, RENDER_DELAY)
     return () => {
       cancelled = true
+      clearTimeout(timer)
     }
-  }, [selected, selectedDone, fill, editVersion, view, format])
+    // `shadow` is covered by its key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, selectedDone, fill, editVersion, view, format, shadowId])
 
   // The displayed URL stays valid until a newer one has replaced it (or it is cleared, or the app
   // unmounts): this cleanup runs after the replacement has committed.
@@ -317,17 +341,33 @@ export default function App() {
     let cancelled = false
     const version = editVersion
     const mask = e.edited ?? r.mask
-    exportImage(r.original, mask, fill ?? undefined, r.colors, format, frame, images.current)
-      .then((blob) => {
-        if (cancelled) return
-        const { width, height } = frameSize(frame, r.original, mask)
-        setFramed({ id, fill, version, format, frame, url: URL.createObjectURL(blob), blob, width, height })
-      })
-      .catch(() => {})
+    const timer = setTimeout(() => {
+      exportImage(r.original, mask, fill ?? undefined, r.colors, format, frame, images.current, shadow)
+        .then((blob) => {
+          if (cancelled) return
+          const { width, height } = frameSize(frame, r.original, mask)
+          setFramed({
+            id,
+            fill,
+            version,
+            format,
+            frame,
+            shadow: shadowId,
+            url: URL.createObjectURL(blob),
+            blob,
+            width,
+            height,
+          })
+        })
+        .catch(() => {})
+    }, RENDER_DELAY)
     return () => {
       cancelled = true
+      clearTimeout(timer)
     }
-  }, [selected, selectedDone, fill, editVersion, view, format, frame])
+    // `shadow` is covered by its key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, selectedDone, fill, editVersion, view, format, frame, shadowId])
 
   useEffect(
     () => () => {
@@ -388,7 +428,8 @@ export default function App() {
           after.id === selected &&
           after.fill === fill &&
           after.version === editVersion &&
-          after.format === format
+          after.format === format &&
+          after.shadow === shadowId
           ? after.blob
           : null
         : framed &&
@@ -396,7 +437,8 @@ export default function App() {
             framed.fill === fill &&
             framed.version === editVersion &&
             framed.format === format &&
-            framed.frame === frame
+            framed.frame === frame &&
+            framed.shadow === shadowId
           ? framed.blob
           : null
     if (shareFiles && ready) {
@@ -418,13 +460,14 @@ export default function App() {
         format,
         frame,
         images.current,
+        shadow,
       ))
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = name
     a.click()
     setTimeout(() => URL.revokeObjectURL(a.href), 1000)
-  }, [selected, fill, after, framed, editVersion, format, frame])
+  }, [selected, fill, after, framed, editVersion, format, frame, shadow, shadowId])
 
   const doneCount = items.filter((i) => i.state === 'done').length
 
@@ -445,6 +488,7 @@ export default function App() {
           format,
           frame,
           images.current,
+          shadow,
         )
         files.push({ name: downloadName(e.file.name, format), blob })
       }
@@ -459,7 +503,7 @@ export default function App() {
     } finally {
       setZipping(false)
     }
-  }, [zipping, items, fill, format, frame])
+  }, [zipping, items, fill, format, frame, shadow])
 
   const current = selected ? entries.current.get(selected) : undefined
   const hasResult = !!current?.result
@@ -706,7 +750,8 @@ export default function App() {
     framed.fill === fill &&
     framed.version === editVersion &&
     framed.format === format &&
-    framed.frame === frame
+    framed.frame === frame &&
+    framed.shadow === shadowId
   const photoSize = current?.result
     ? { width: current.result.original.width, height: current.result.original.height }
     : null
@@ -952,6 +997,8 @@ export default function App() {
                 onFormat={setFormat}
                 frame={frame}
                 onFrame={setFrame}
+                shadow={shadow}
+                onShadow={setShadow}
                 preview={framedReady ? framed.url : null}
                 outSize={
                   frame === 'photo' ? photoSize : framedReady ? { width: framed.width, height: framed.height } : null
