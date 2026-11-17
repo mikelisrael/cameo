@@ -193,6 +193,9 @@ export default function App() {
             }
             e.result = result
             patch(id, { state: 'done' })
+            // A short tick on phones. Android only: iOS Safari has no vibrate, so this is a no-op there.
+            if (document.visibilityState === 'visible' && matchMedia('(any-hover: none)').matches)
+              navigator.vibrate?.(12)
             setSelected((s) => s ?? id)
           })
           .catch((err: Error) => patch(id, { state: 'error', error: err.message }))

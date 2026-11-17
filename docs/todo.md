@@ -84,7 +84,7 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 
 - [x] Works offline once the model is cached (vite-plugin-pwa: app shell precached, fonts and the ORT runtime cached on use; a new version waits until every Cameo tab is closed, never swapped under an open one).
 - [x] Workers now handle `onerror`: a worker that fails to start shows the error banner (Reload) or Select's Try again, and pending images go to their error state.
-- [ ] Pinch-zoom on the stage, swipe between images, haptic tick on Android when a cut-out finishes.
+- [x] Pinch-zoom on the stage, swipe between images, haptic tick on Android when a cut-out finishes. (Haptic tick done. Swipe and pinch on the stage not built: Compare's slider drags across the whole stage, and Compare deliberately doesn't zoom; Edit already pinches.)
 - [ ] Keyboard shortcuts (paste, download, next/previous image, brush keys) with a cheat sheet.
 - [ ] Accessibility audit (screen reader pass through the whole flow, focus order, reduced motion).
 - [ ] Playwright e2e for the core flow (drop → cut-out → background → download) running on the CPU path, so CI needs no GPU.
