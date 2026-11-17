@@ -3,7 +3,17 @@ import type { Seg, SegIn, SegOut } from './protocol'
 
 export type SegState = 'idle' | 'downloading' | 'embedding' | 'ready' | 'error'
 
-type PendingDecode = { resolve: (seg: Seg | null) => void; reject: (err: Error) => void }
+type PendingDecode = {
+  resolve: (seg: Seg | null) => void
+  reject: (err: Error) => void
+  id: string
+  x: number
+  y: number
+  width: number
+  height: number
+  dropped: boolean // its image was evicted while this decode was in flight
+  retried: boolean
+}
 
 /** On-device click-to-select: SlimSAM in a lazy worker. The page prepares an image once, then decodes clicks. */
 export function useSegmenter() {
@@ -56,6 +66,7 @@ export function useSegmenter() {
         // The worker evicted this embedding. Forget it, and embed again if the page is still on it.
         embedded.current.delete(m.id)
         requested.current.delete(m.id)
+        for (const p of pending.current.values()) if (p.id === m.id) p.dropped = true
         if (m.id === last.current) {
           setEmbeddedLast(false)
           const image = images.current.get(m.id)
@@ -72,7 +83,12 @@ export function useSegmenter() {
         if (m.req !== undefined) {
           const p = pending.current.get(m.req)
           pending.current.delete(m.req)
-          p?.reject(new Error(m.message))
+          if (p && p.dropped && !p.retried && images.current.has(p.id)) {
+            // Evicted behind this tap: embed again and decode once more.
+            sendRef.current(p.id, p.x, p.y, p.width, p.height, p.resolve, p.reject, true)
+          } else {
+            p?.reject(new Error(m.message))
+          }
         } else {
           if (m.id) requested.current.delete(m.id)
           if (!loaded.current || m.id === last.current) setFailed(true)
@@ -102,28 +118,45 @@ export function useSegmenter() {
     [spawn, post],
   )
 
-  const decode = useCallback(
-    (id: string, x: number, y: number, width: number, height: number) =>
-      new Promise<Seg | null>((resolve, reject) => {
-        const worker = workerRef.current
-        if (!worker) {
-          reject(new Error('The selector is not ready'))
+  const send = useCallback(
+    (
+      id: string,
+      x: number,
+      y: number,
+      width: number,
+      height: number,
+      resolve: PendingDecode['resolve'],
+      reject: PendingDecode['reject'],
+      retried: boolean,
+    ) => {
+      const worker = workerRef.current
+      if (!worker) {
+        reject(new Error('The selector is not ready'))
+        return
+      }
+      if (!requested.current.has(id)) {
+        // The worker let this image go (or it never had it): embed first, the worker's queue runs it before the decode.
+        const image = images.current.get(id)
+        if (!image) {
+          reject(new Error('That image is not prepared'))
           return
         }
-        if (!requested.current.has(id)) {
-          // The worker let this image go (or it never had it): embed first, the worker's queue runs it before the decode.
-          const image = images.current.get(id)
-          if (!image) {
-            reject(new Error('That image is not prepared'))
-            return
-          }
-          post(id, image)
-        }
-        const req = nextReq.current++
-        pending.current.set(req, { resolve, reject })
-        worker.postMessage({ type: 'decode', id, req, x, y, width, height } satisfies SegIn)
-      }),
+        post(id, image)
+      }
+      const req = nextReq.current++
+      pending.current.set(req, { resolve, reject, id, x, y, width, height, dropped: false, retried })
+      worker.postMessage({ type: 'decode', id, req, x, y, width, height } satisfies SegIn)
+    },
     [post],
+  )
+  // The worker's message handler is created once per spawn: it reads the latest send through this ref.
+  const sendRef = useRef(send)
+  sendRef.current = send
+
+  const decode = useCallback(
+    (id: string, x: number, y: number, width: number, height: number) =>
+      new Promise<Seg | null>((resolve, reject) => send(id, x, y, width, height, resolve, reject, false)),
+    [send],
   )
 
   const drop = useCallback((id: string) => {

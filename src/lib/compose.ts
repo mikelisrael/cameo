@@ -48,6 +48,9 @@ export function cutout(
     c.drawImage(small, 0, 0, w, h)
   }
 
+  // iOS counts every canvas's memory until GC; zeroing the size frees it now.
+  small.width = small.height = 0
+
   if (!fill) return subject
 
   const out = document.createElement('canvas')
@@ -57,6 +60,7 @@ export function cutout(
   o.fillStyle = fill
   o.fillRect(0, 0, w, h)
   o.drawImage(subject, 0, 0)
+  subject.width = subject.height = 0
   return out
 }
 
@@ -64,7 +68,11 @@ export function cutout(
 export function exportPng(original: ImageBitmap, mask: Mask, fill?: string, colors?: Uint8ClampedArray): Promise<Blob> {
   const canvas = cutout(original, mask, fill, colors)
   return new Promise((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not encode PNG'))), 'image/png'),
+    canvas.toBlob((b) => {
+      canvas.width = canvas.height = 0
+      if (b) resolve(b)
+      else reject(new Error('Could not encode PNG'))
+    }, 'image/png'),
   )
 }
 

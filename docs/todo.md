@@ -48,12 +48,12 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 - [x] Zoom and pan in Edit (wheel, pinch, + / −, Fit; double-click fits with Move). Compare keeps its slider and doesn't zoom.
 - [x] **Erase / Restore brushes** with size and softness on the mask (`src/lib/brush.ts`, `src/components/Editor.tsx`). "Smart edges" snaps a stroke to the photo: colours under the stroke's centre vs. the kept/removed colours around it, then a colour guided filter; erase never adds, restore never removes.
 - [x] **Click to keep / click to remove:** the Select tool (Keep | Remove) taps an object; SlimSAM (`Xenova/slimsam-77-uniform`, q8, ~14 MB, CPU) runs in its own lazy worker (`src/worker/segment.worker.ts`, `src/lib/useSegmenter.ts`), the mask is snapped to the photo with the Phase 1 guided filter, one undo step per tap.
-- [ ] Optional from review: a tap racing the eviction of its own image's embedding (3+ images, quick switching) does nothing once; retry the decode once after re-embedding (`useSegmenter.ts` decode).
-- [ ] Optional: the editor doesn't refit when the window resizes or a phone rotates (seen going from desktop to 390 px in a preview); refit on resize while the view is still at Fit.
+- [x] A tap racing the eviction of its own image's embedding (3+ images, quick switching) now re-embeds and retries once (`useSegmenter.ts`).
+- [x] The editor refits on resize or rotation while the view is at Fit (a tap no longer counts as moving the view).
 - [x] Undo/redo for every brush stroke, background change and Reset (`src/lib/history.ts`, per image, capped at 60 steps / 150 MB). Ctrl/⌘+Z, Ctrl/⌘+Shift+Z, Ctrl+Y.
 - [x] Hold Space, or press and hold Before, to see the original in Edit. Keys in Edit: E erase, R restore, V/H move, [ ] size, + − 0 zoom.
-- [ ] iOS Safari caps one canvas at about 16.7 MP; the 24 MP working cap can pass it (export and the editor both draw at full mask size). Lower the cap on iOS, or tile the export.
-- [ ] Optional from review: Edit → Compare after edits shows the previous cut-out for a moment until the new one is drawn; gate Compare on the current version and show the editor's frame meanwhile.
+- [x] iOS canvas limits: the working size is capped at 16.7 MP on Apple devices (`decode.ts`, since Phase 0; iOS 18 allows 67 MP, kept low for older iOS), and temporary full-size canvases are released as soon as they're used (iOS also caps total canvas memory).
+- [x] Edit → Compare never shows the previous cut-out: Compare waits for the current version, and the editor (inert) stays up meanwhile.
 
 ## How it works (Israel, 17 November 2026: "intuitive and responsive, alive and not ai slop")
 
