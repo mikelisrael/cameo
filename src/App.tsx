@@ -193,7 +193,9 @@ export default function App() {
     if (view === 'edit') return
     let cancelled = false
     const version = editVersion
-    cutout(r.original, e.edited ?? r.mask, fill ?? undefined, r.colors).toBlob((blob) => {
+    const canvas = cutout(r.original, e.edited ?? r.mask, fill ?? undefined, r.colors)
+    canvas.toBlob((blob) => {
+      canvas.width = canvas.height = 0
       // A superseded run never makes a URL, so there is nothing to revoke for it.
       if (cancelled || !blob) return
       setAfter({ id, fill, version, url: URL.createObjectURL(blob), blob })
@@ -446,7 +448,10 @@ export default function App() {
       window.removeEventListener('blur', blur)
     }
   }, [])
-  const showCompare = view === 'compare' && !!(current?.result && after?.id === selected)
+  const showCompare =
+    view === 'compare' && !!(current?.result && after?.id === selected && after.version === editVersion)
+  // Edit → Compare: keep the editor (inert) on screen until the new PNG is ready, so the old cut-out never shows.
+  const compareCatchingUp = view === 'compare' && !showCompare && !!current?.result && !!current.edited
   const reveal = !!selected && showCompare && !revealed.current.has(selected)
   useEffect(() => {
     if (showCompare && selected) revealed.current.add(selected)
@@ -577,7 +582,7 @@ export default function App() {
               />
             )}
             <div className="sheet stage">
-              {view === 'edit' && current?.result && current.edited ? (
+              {(view === 'edit' || compareCatchingUp) && current?.result && current.edited ? (
                 <Editor
                   key={selected}
                   ref={editorRef}
@@ -593,6 +598,7 @@ export default function App() {
                   onStroke={onStroke}
                   onTap={onTap}
                   pending={tapPoint}
+                  still={view !== 'edit'}
                 />
               ) : showCompare && current?.result && after ? (
                 <Compare

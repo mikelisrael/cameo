@@ -30,6 +30,7 @@ type Props = {
   onStroke: (patch: MaskPatch) => void
   onTap?: (p: { x: number; y: number }) => void
   pending?: { x: number; y: number } | null
+  still?: boolean // take no input (the editor stays up while Compare catches up)
   ref?: Ref<EditorHandle>
 }
 
@@ -87,6 +88,7 @@ export function Editor({
   onStroke,
   onTap,
   pending,
+  still,
   ref,
 }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -450,10 +452,8 @@ export function Editor({
       if (tapStart.current) tapStart.current.ok = false
       mode.current = 'pinch'
       pinch.current = pair()
-      touched.current = true
     } else if (e.button === 1 || tool === 'move' || tool === 'select') {
       mode.current = 'pan'
-      touched.current = true
       tapStart.current =
         tool === 'select' && isPrimary ? { id: e.pointerId, x: e.clientX, y: e.clientY, ok: true } : null
     } else {
@@ -477,8 +477,12 @@ export function Editor({
       if (ts && ts.id === e.pointerId && Math.hypot(e.clientX - ts.x, e.clientY - ts.y) >= 6) ts.ok = false
       if (mode.current === 'pan') {
         const v = view.current
-        v.x += e.clientX - prev.x
-        v.y += e.clientY - prev.y
+        const dx = e.clientX - prev.x
+        const dy = e.clientY - prev.y
+        // A tap is not a move: only a drag stops resizes from refitting.
+        if (dx || dy) touched.current = true
+        v.x += dx
+        v.y += dy
         clampPan()
         applyView()
       } else if (mode.current === 'pinch' && pointers.current.size === 2) {
@@ -550,6 +554,7 @@ export function Editor({
     <div
       ref={viewportRef}
       className="editor"
+      inert={still}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={(e) => endPointer(e, false)}
