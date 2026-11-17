@@ -75,8 +75,8 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 - [ ] **More backgrounds:** your own image, the original blurred (portrait-mode look), gradients.
 - [ ] **Crop and size presets:** fit to subject with padding; Instagram post/story, WhatsApp status, square 1080 for marketplaces (Jumia, Shopify, Etsy), passport photo.
 - [ ] **Sticker export:** white outline + WebP 512×512 for WhatsApp stickers.
-- [ ] Formats: PNG, WebP, JPG (with chosen background); **download all as ZIP**; settings apply to the whole batch.
-- [ ] Share straight to apps (Web Share API) on phones.
+- [x] Formats: PNG, WebP (where the browser can encode it), JPG (white when the background is clear); **download all as ZIP** (fflate, stored); the current background and format apply to the whole batch, each image with its own edits.
+- [x] Share straight to apps (Web Share API) on phones: "Save or share" since Phase 0, now in every format.
 
 ## Phase 4: feels like an app (polish)
 

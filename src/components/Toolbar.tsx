@@ -1,6 +1,10 @@
+import type { Format } from '../lib/compose'
 import type { Diagnostics } from '../lib/protocol'
 import type { Item } from './Queue'
-import { CheckIcon, ChevronDownIcon, DownloadIcon, InfoIcon, LockIcon, ShareIcon } from './icons'
+import { CheckIcon, ChevronDownIcon, DownloadIcon, InfoIcon, LockIcon, ShareIcon, Spinner } from './icons'
+import { Segmented } from './Segmented'
+
+const LABEL: Record<Format, string> = { png: 'PNG', webp: 'WebP', jpg: 'JPG' }
 
 /** Backgrounds offered for the cut-out; `null` is transparent. These are content, not chrome. */
 const PRESETS: { label: string; value: string | null }[] = [
@@ -27,6 +31,14 @@ type Props = {
   scaled?: Item['scaled']
   /** Phones: the button opens the share sheet (Save Image, WhatsApp…) instead of downloading. */
   share: boolean
+  format: Format
+  onFormat: (format: Format) => void
+  /** This browser can encode WebP. */
+  webp: boolean
+  /** Finished cut-outs in the queue; "Download all" appears from two. */
+  doneCount: number
+  onDownloadAll: () => void
+  zipping: boolean
 }
 
 export function Toolbar({
@@ -41,8 +53,15 @@ export function Toolbar({
   onRetryGpu,
   scaled,
   share,
+  format,
+  onFormat,
+  webp,
+  doneCount,
+  onDownloadAll,
+  zipping,
 }: Props) {
   const isPreset = PRESETS.some((p) => p.value === fill)
+  const formats = (['png', ...(webp ? ['webp'] : []), 'jpg'] as Format[]).map((f) => ({ value: f, label: LABEL[f] }))
   return (
     <aside className="panel">
       <div className="panel__group">
@@ -98,19 +117,43 @@ export function Toolbar({
       </div>
 
       <div className="panel__group">
+        <h2 className="panel__title" id="format-label">
+          Format
+        </h2>
+        <Segmented className="seg seg--block" label="Format" options={formats} value={format} onChange={onFormat} />
+        {format === 'jpg' && !fill && (
+          <p className="panel__notice">
+            <InfoIcon width={15} height={15} />
+            <span>JPG has no transparency, so it gets a white background.</span>
+          </p>
+        )}
         {/* On phones this becomes a bar pinned to the bottom of the screen, in thumb reach. */}
         <div className="panel__save">
           <button type="button" className="button button--primary button--block" onClick={onDownload}>
             {share ? <ShareIcon /> : <DownloadIcon />}
-            {share ? 'Save or share' : 'Download PNG'}
+            {share ? 'Save or share' : `Download ${LABEL[format]}`}
           </button>
         </div>
+        {doneCount >= 2 && (
+          <button
+            type="button"
+            className="button button--quiet button--block"
+            onClick={onDownloadAll}
+            disabled={zipping}
+          >
+            <DownloadIcon />
+            <span>
+              Download all (<span className="mono">{doneCount}</span>) as ZIP
+            </span>
+            {zipping && <Spinner />}
+          </button>
+        )}
         {size && (
           <p className="panel__meta">
             <span className="mono">
               {size.width} × {size.height}
             </span>{' '}
-            px · {fill ? 'solid background' : 'transparent'}
+            px · {fill ? 'solid background' : format === 'jpg' ? 'white background' : 'transparent'}
           </p>
         )}
         {scaled && (

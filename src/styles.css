@@ -230,6 +230,7 @@ input {
     border-color 180ms var(--ease),
     color 180ms var(--ease),
     transform 180ms var(--ease);
+  text-decoration: none; /* a link styled as a button (How it works) */
 }
 
 .button:active {
@@ -2012,6 +2013,11 @@ kbd {
 .seg__btn:hover,
 .seg__btn[aria-checked='true'] {
   color: var(--ink);
+}
+
+.seg--block {
+  display: grid;
+  width: 100%;
 }
 
 .seg__btn svg {

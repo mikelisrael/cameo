@@ -17,7 +17,7 @@ import {
 import { Queue, type Item } from './components/Queue'
 import { Toolbar } from './components/Toolbar'
 import { applyPatch, applyPick, type MaskPatch } from './lib/brush'
-import { cutout, downloadName, exportPng } from './lib/compose'
+import { downloadName, exportImage, supportsWebp, zipCutouts, type Format } from './lib/compose'
 import { isDirty, newHistory, push, redo, undo, type History } from './lib/history'
 import type { Mask } from './lib/protocol'
 import { useHowItWorks } from './lib/useHowItWorks'
@@ -74,12 +74,17 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null)
   const [fill, setFill] = useState<string | null>(null)
   const [custom, setCustom] = useState('#e0532c')
+  // Not remembered between visits.
+  const [format, setFormat] = useState<Format>('png')
+  const [webp, setWebp] = useState(false)
+  const [zipping, setZipping] = useState(false)
   // The selected cut-out, rendered at full size with the chosen background: shown on stage and
   // saved as is, so saving needs no async work (iOS only allows share() straight from a tap).
   const [after, setAfter] = useState<{
     id: string
     fill: string | null
     version: number
+    format: Format
     url: string
     blob: Blob
   } | null>(null)
@@ -224,17 +229,17 @@ export default function App() {
     if (view === 'edit') return
     let cancelled = false
     const version = editVersion
-    const canvas = cutout(r.original, e.edited ?? r.mask, fill ?? undefined, r.colors)
-    canvas.toBlob((blob) => {
-      canvas.width = canvas.height = 0
-      // A superseded run never makes a URL, so there is nothing to revoke for it.
-      if (cancelled || !blob) return
-      setAfter({ id, fill, version, url: URL.createObjectURL(blob), blob })
-    }, 'image/png')
+    exportImage(r.original, e.edited ?? r.mask, fill ?? undefined, r.colors, format)
+      .then((blob) => {
+        // A superseded run never makes a URL, so there is nothing to revoke for it.
+        if (cancelled) return
+        setAfter({ id, fill, version, format, url: URL.createObjectURL(blob), blob })
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [selected, selectedDone, fill, editVersion, view])
+  }, [selected, selectedDone, fill, editVersion, view, format])
 
   // The displayed URL stays valid until a newer one has replaced it (or it is cleared, or the app
   // unmounts): this cleanup runs after the replacement has committed.
@@ -245,17 +250,27 @@ export default function App() {
     [after],
   )
 
+  // WebP is offered only where the browser really encodes it.
+  useEffect(() => {
+    supportsWebp().then(setWebp)
+  }, [])
+  useEffect(() => {
+    if (!webp && format === 'webp') setFormat('png')
+  }, [webp, format])
+
   const save = useCallback(async () => {
     const e = selected ? entries.current.get(selected) : undefined
     if (!e?.result) return
-    const name = downloadName(e.file.name)
-    // The pre-rendered PNG counts only once it has the background picked now (a swatch tap
-    // re-renders it, which takes a moment on a large photo).
+    const name = downloadName(e.file.name, format)
+    // The pre-rendered image counts only once it has the background and format picked now (a
+    // swatch tap or format change re-renders it, which takes a moment on a large photo).
     const ready =
-      after && after.id === selected && after.fill === fill && after.version === editVersion ? after.blob : null
+      after && after.id === selected && after.fill === fill && after.version === editVersion && after.format === format
+        ? after.blob
+        : null
     if (shareFiles && ready) {
       try {
-        await navigator.share({ files: [new File([ready], name, { type: 'image/png' })] })
+        await navigator.share({ files: [new File([ready], name, { type: ready.type })] })
         return
       } catch (err) {
         if ((err as Error).name === 'AbortError') return // closed the share sheet
@@ -263,13 +278,47 @@ export default function App() {
       }
     }
     const blob =
-      ready ?? (await exportPng(e.result.original, e.edited ?? e.result.mask, fill ?? undefined, e.result.colors))
+      ready ??
+      (await exportImage(e.result.original, e.edited ?? e.result.mask, fill ?? undefined, e.result.colors, format))
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = name
     a.click()
     setTimeout(() => URL.revokeObjectURL(a.href), 1000)
-  }, [selected, fill, after, editVersion])
+  }, [selected, fill, after, editVersion, format])
+
+  const doneCount = items.filter((i) => i.state === 'done').length
+
+  const saveAll = useCallback(async () => {
+    if (zipping) return
+    setZipping(true)
+    try {
+      const files: { name: string; blob: Blob }[] = []
+      // One at a time: each full-size canvas is freed before the next is drawn.
+      for (const item of items) {
+        const e = item.state === 'done' ? entries.current.get(item.id) : undefined
+        if (!e?.result) continue
+        const blob = await exportImage(
+          e.result.original,
+          e.edited ?? e.result.mask,
+          fill ?? undefined,
+          e.result.colors,
+          format,
+        )
+        files.push({ name: downloadName(e.file.name, format), blob })
+      }
+      if (!files.length) return
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(await zipCutouts(files))
+      a.download = 'cameo-cutouts.zip'
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    } catch {
+      setNotice("Couldn't make the ZIP. Try again, or download them one by one.")
+    } finally {
+      setZipping(false)
+    }
+  }, [zipping, items, fill, format])
 
   const current = selected ? entries.current.get(selected) : undefined
   const hasResult = !!current?.result
@@ -710,6 +759,12 @@ export default function App() {
                 onRetryGpu={retryGpu}
                 scaled={selectedItem?.scaled}
                 share={shareFiles}
+                format={format}
+                onFormat={setFormat}
+                webp={webp}
+                doneCount={doneCount}
+                onDownloadAll={saveAll}
+                zipping={zipping}
               />
             ) : (
               <aside className="panel panel--waiting">
