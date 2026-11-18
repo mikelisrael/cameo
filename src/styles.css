@@ -1736,39 +1736,81 @@ kbd {
   border-top-color: #fff;
 }
 
-/* Drop veil, once images are in */
+/* Drop veil: while files are dragged over the window, the whole window becomes the drop sheet.
+   The one place the accent is a fill that carries words (DESIGN_SYSTEM §6). */
 
 .veil {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 60;
   display: grid;
-  place-items: center;
-  padding: 16px;
-  background: color-mix(in oklab, var(--paper) 78%, transparent);
-  backdrop-filter: blur(4px);
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background: var(--brand);
+  color: var(--brand-ink);
   pointer-events: none;
   animation: fade 160ms var(--ease) both;
 }
 
-.veil__box {
+.veil__frame {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  width: min(480px, 100%);
-  padding: 56px 24px;
-  border: 2px dashed var(--accent);
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  border: 2px dashed color-mix(in oklab, var(--brand-ink) 55%, transparent);
   border-radius: var(--r-card);
-  background: var(--sheet);
-  font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  text-align: center;
+  animation: veil-settle 280ms var(--ease) both;
 }
 
-.veil__box svg {
-  color: var(--accent);
+.veil__mark {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 14px;
+  animation: veil-bob 1.4s cubic-bezier(0.45, 0, 0.55, 1) 280ms infinite alternate;
+}
+
+.veil__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(26px, 4.2vw, 40px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.veil__note {
+  margin: 0;
+  font-size: 15px;
+}
+
+@keyframes veil-settle {
+  from {
+    transform: scale(0.985);
+    opacity: 0;
+  }
+}
+
+@keyframes veil-bob {
+  to {
+    transform: translateY(-6px);
+  }
+}
+
+@media (min-width: 600px) {
+  .veil {
+    padding: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .veil,
+  .veil__frame,
+  .veil__mark {
+    animation: none;
+  }
 }
 
 /* ---------- Motion ---------- */

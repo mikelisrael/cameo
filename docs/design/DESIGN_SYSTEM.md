@@ -75,7 +75,7 @@ Loaded from Google Fonts in `index.html`. Nothing else.
 - Max width 1200px, 24px gutters (16px under 600px).
 - Empty state: one centred sheet, at most 680px wide.
 - Workspace: the stage on the left (fills), a 288px panel on the right; under 900px the panel drops below the stage. The queue strip sits under the stage.
-- Once images are in, the whole page takes a drop, with a "Drop to add" veil while dragging.
+- The whole window takes a drop, on every screen (Israel, 18 Nov 2026, from Photoroom). While files are dragged over it, the veil floods the window with `--brand`: a dashed `--brand-ink` frame inset from the edges (the window becomes the drop sheet), the drop mark, "Drop your images" in Display and "They stay on this device." It is the one place the accent is a fill that carries words (§8); `--brand-ink` on `--brand` clears 5:1 in every accent.
 
 ## 7. Words
 
@@ -88,7 +88,7 @@ Loaded from Google Fonts in `index.html`. Nothing else.
 - [ ] Uses only the tokens above, and is checked in light and dark.
 - [ ] Text clears 4.5:1 on its own background in both themes.
 - [ ] Designed at 390px first: thumb-reach actions, 44px targets, safe areas, nothing hover-only.
-- [ ] The accent is a mark, not a fill, and carries no text.
+- [ ] The accent is a mark, not a fill, and carries no text (the one exception: the drop veil, §6).
 - [ ] Every state is drawn: empty, setting up, ready, processing, done, error, slower device.
 - [ ] Works at 360px wide with no sideways scroll.
 - [ ] Keyboard: every control reachable, visible focus ring in `--accent`.

@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 
 import { ACCEPT_ATTR, isAcceptedImage } from '../lib/decode'
 
-const hasFiles = (e: DragEvent) => [...e.dataTransfer.types].includes('Files')
+const hasFiles = (e: DragEvent) => [...(e.dataTransfer?.types ?? [])].includes('Files')
 
 /**
- * File intake for the whole app: a hidden picker, paste anywhere, and drag props for any
- * element that should take a drop. `onReject` gets the names of files that aren't images.
+ * File intake for the whole app: a hidden picker, paste anywhere, and file drops anywhere in
+ * the window while `enabled`. `onReject` gets the names of files that aren't images.
  */
-export function useFileIntake(onFiles: (files: File[]) => void, onReject: (names: string[]) => void) {
+export function useFileIntake(onFiles: (files: File[]) => void, onReject: (names: string[]) => void, enabled: boolean) {
   const input = useRef<HTMLInputElement>(null)
   const camera = useRef<HTMLInputElement>(null)
   const depth = useRef(0)
@@ -34,27 +34,64 @@ export function useFileIntake(onFiles: (files: File[]) => void, onReject: (names
     return () => window.removeEventListener('paste', onPaste)
   }, [accept])
 
-  const dragProps = {
-    onDragEnter: (e: DragEvent) => {
+  // Whole-window drag and drop: the overlay and the drop work on every screen.
+  useEffect(() => {
+    if (!enabled) {
+      depth.current = 0
+      setOver(false)
+      return
+    }
+    let watchdog: number | undefined
+    const reset = () => {
+      window.clearTimeout(watchdog)
+      depth.current = 0
+      setOver(false)
+    }
+    const onEnter = (e: DragEvent) => {
       if (!hasFiles(e)) return
       e.preventDefault()
       depth.current++
       setOver(true)
-    },
-    onDragOver: (e: DragEvent) => {
-      if (hasFiles(e)) e.preventDefault()
-    },
-    onDragLeave: () => {
+    }
+    const onOver = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+      // The watchdog may have fired mid-drag (a still cursor only gets a dragover every ~350 ms
+      // in Firefox/Safari), and dragenter won't fire again: a live dragover restores the overlay.
+      // setOver(true) is a no-op when already over.
+      depth.current = Math.max(depth.current, 1)
+      setOver(true)
+      // dragover fires continuously while hovering; silence means the drag ended unseen.
+      window.clearTimeout(watchdog)
+      watchdog = window.setTimeout(reset, 1000)
+    }
+    const onLeave = () => {
       depth.current = Math.max(0, depth.current - 1)
       if (depth.current === 0) setOver(false)
-    },
-    onDrop: (e: DragEvent) => {
+    }
+    const onDrop = (e: DragEvent) => {
+      if (!hasFiles(e)) return
       e.preventDefault()
-      depth.current = 0
-      setOver(false)
-      accept(e.dataTransfer.files)
-    },
-  }
+      reset()
+      accept(e.dataTransfer?.files ?? [])
+    }
+    window.addEventListener('dragenter', onEnter)
+    window.addEventListener('dragover', onOver)
+    window.addEventListener('dragleave', onLeave)
+    window.addEventListener('drop', onDrop)
+    window.addEventListener('dragend', reset)
+    window.addEventListener('blur', reset)
+    return () => {
+      window.clearTimeout(watchdog)
+      window.removeEventListener('dragenter', onEnter)
+      window.removeEventListener('dragover', onOver)
+      window.removeEventListener('dragleave', onLeave)
+      window.removeEventListener('drop', onDrop)
+      window.removeEventListener('dragend', reset)
+      window.removeEventListener('blur', reset)
+    }
+  }, [enabled, accept])
 
   const onChange = (e: ChangeEvent<HTMLInputElement>) => {
     accept(e.target.files ?? [])
@@ -73,7 +110,6 @@ export function useFileIntake(onFiles: (files: File[]) => void, onReject: (names
     open: () => input.current?.click(),
     openCamera: () => camera.current?.click(),
     over,
-    dragProps,
     picker,
   }
 }

@@ -22,6 +22,18 @@ export const UploadIcon = (p: P) => (
   </svg>
 )
 
+/** The drop veil's mark: a photo tilting into the corners of a frame. Drawn at 48 for a large size. */
+export const DropMark = (p: P) => (
+  <svg {...base({ viewBox: '0 0 48 48', strokeWidth: 2, ...p })}>
+    <path d="M6 15V9a3 3 0 0 1 3-3h6M33 6h6a3 3 0 0 1 3 3v6M42 33v6a3 3 0 0 1-3 3h-6M15 42H9a3 3 0 0 1-3-3v-6" />
+    <g transform="rotate(-8 24 24)">
+      <rect x="13" y="14" width="22" height="20" rx="3" />
+      <circle cx="29.5" cy="19.5" r="2" />
+      <path d="m13.5 31 7-7.5 5 5 3-3 6 6" />
+    </g>
+  </svg>
+)
+
 export const DownloadIcon = (p: P) => (
   <svg {...base(p)}>
     <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5" />
