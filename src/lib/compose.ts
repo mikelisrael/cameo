@@ -268,7 +268,7 @@ export function frameSize(frame: Frame, original: ImageBitmap, mask: Mask): { wi
 }
 
 /** Image blob in the chosen format: transparent background (PNG, WebP), or a colour, gradient, blur or picture behind it. */
-export function exportImage(
+export async function exportImage(
   original: ImageBitmap,
   mask: Mask,
   fill: string | undefined,
@@ -277,12 +277,28 @@ export function exportImage(
   frame: Frame = 'photo',
   images?: Map<string, ImageBitmap>,
   shadow: Shadow = NO_SHADOW,
+  /** Photo frame only: render with the long edge at most this many pixels (never upscaled). */
+  maxSide?: number,
 ): Promise<Blob> {
   // JPG has no transparency: without a picked background it gets white rather than black.
   const background = fill ?? (format === 'jpg' ? '#ffffff' : undefined)
   let canvas: HTMLCanvasElement
   if (frame === 'photo') {
-    canvas = cutout(original, mask, background, colors, images, shadow)
+    const k = maxSide ? Math.min(1, maxSide / Math.max(original.width, original.height)) : 1
+    if (k < 1) {
+      const small = await createImageBitmap(original, {
+        resizeWidth: Math.max(1, Math.round(original.width * k)),
+        resizeHeight: Math.max(1, Math.round(original.height * k)),
+        resizeQuality: 'high',
+      })
+      try {
+        canvas = cutout(small, mask, background, colors, images, shadow)
+      } finally {
+        small.close()
+      }
+    } else {
+      canvas = cutout(original, mask, background, colors, images, shadow)
+    }
   } else {
     const box = photoBox(mask, original.width, original.height)
     const l = layout(frame, box, original.width, original.height)

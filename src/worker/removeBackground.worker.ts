@@ -8,7 +8,7 @@ import {
   type WorkerIn,
   type WorkerOut,
 } from '../lib/protocol'
-import { decontaminate, refineAlpha } from '../lib/refine'
+import { decontaminate, refineAlpha, tightenAlpha } from '../lib/refine'
 import { resumableFetch } from './resumableFetch'
 
 const MODEL_ID = 'onnx-community/BiRefNet_lite-ONNX'
@@ -289,7 +289,11 @@ ctx.onmessage = async (e) => {
       const t2 = performance.now()
       const item = (output[outputNames[0]] as unknown as Tensor[])[0] // a Tensor indexes into its batch
       if ((item.data as Float32Array).some((x) => x < -1e-5 || x > 1 + 1e-5)) item.sigmoid_()
-      const maskImage = await RawImage.fromTensor(item.mul_(255).to('uint8')).resize(input.width, input.height)
+      // Round, don't truncate: the uint8 cast drops the fraction, which turned a solid 255 into 254.
+      const maskImage = await RawImage.fromTensor(item.mul_(255).add_(0.5).clamp_(0, 255).to('uint8')).resize(
+        input.width,
+        input.height,
+      )
       const alpha = new Uint8ClampedArray(maskImage.data)
       const t3 = performance.now()
 
@@ -304,6 +308,8 @@ ctx.onmessage = async (e) => {
           if (opts.refine) maskData = refineAlpha(input.data, input.channels, alpha, w, h, diagnostics.size, opts)
           t4 = performance.now()
           if (opts.decontaminate) colors = decontaminate(input.data, input.channels, maskData, w, h)
+          // After decontaminate: colours are estimated from the untightened alpha.
+          if (opts.refine && opts.tighten > 0) tightenAlpha(maskData, opts.tighten, 1 - opts.tighten)
           t5 = performance.now()
         } catch (err) {
           console.warn('Refinement skipped:', message(err))

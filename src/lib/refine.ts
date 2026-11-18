@@ -651,6 +651,13 @@ export function decontaminate(
   return result
 }
 
+/** Stretches alpha between `lo` and `hi` (0..1) to the full range, in place: below `lo` is 0, above `hi` is 255. */
+export function tightenAlpha(alpha: Uint8Array | Uint8ClampedArray, lo: number, hi: number): void {
+  const lut = new Uint8Array(256)
+  for (let i = 0; i < 256; i++) lut[i] = Math.min(255, Math.max(0, Math.round(((i / 255 - lo) / (hi - lo)) * 255)))
+  for (let i = 0; i < alpha.length; i++) alpha[i] = lut[alpha[i]]
+}
+
 /**
  * Runs the full clean-up: sharpen the mask at the photo's resolution (guided filter), then remove the old background's
  * colour from the edges (blur fusion). Each step can be switched off through `opts`.
@@ -666,5 +673,7 @@ export function refine(
 ): { mask: Uint8ClampedArray; colors?: Uint8ClampedArray } {
   const mask = opts.refine ? refineAlpha(image, channels, alpha, w, h, modelSize, opts) : alpha
   const colors = opts.decontaminate ? decontaminate(image, channels, mask, w, h) : undefined
+  // After decontaminate: colours are estimated from the untightened alpha.
+  if (opts.refine && opts.tighten > 0) tightenAlpha(mask, opts.tighten, 1 - opts.tighten)
   return { mask, colors }
 }

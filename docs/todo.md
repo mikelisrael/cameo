@@ -7,7 +7,7 @@ The roadmap to a state-of-the-art Cameo, written 16 November 2026 from an analys
 **Strong:** private by design (nothing uploaded), no running cost, a calm UI with every state drawn, full-resolution export, batch queue, background colours, reset/remove.
 
 **Weak, in order of how much it hurts:**
-1. **Edge quality on big photos.** The mask is predicted at 1024px (512px on the CPU path) and stretched to the photo's size, so a 3200×4000 portrait gets soft hair and halo edges. This is the gap between us and Photoroom/remove.bg.
+1. **Edge quality on big photos.** The mask is predicted at 1024px (512px on the CPU path) and stretched to the photo's size, so a 3200×4000 portrait gets soft hair and halo edges. This is the gap between us and Photoroom/remove.bg. Better since 18 Nov 2026 (mask rounded so the inside is solid, edge band tightened after colour clean-up: a ~25 px blur became a crisp line), but Israel still wants Photoroom-sharp: next run.
 2. **Many machines land on the slow CPU path** (Israel's did), with the 512px model: slower and blurrier. We don't know why, because nothing records it.
 3. **No way to fix a mistake.** Every serious tool has erase/restore brushes (Adobe Express, remove.bg's Magic Brush, Photoroom).
 4. **iPhone photos (HEIC) are rejected,** which is most of what friends will drop.

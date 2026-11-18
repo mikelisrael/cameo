@@ -39,8 +39,16 @@ export type WorkerOut =
   /** A download dropped and the worker is about to try again: this is attempt `attempt` of `of`. */
   | { type: 'retrying'; attempt: number; of: number }
 
-export type RefineOptions = { refine: boolean; decontaminate: boolean; eps: number; radius: number }
-export const DEFAULT_REFINE: RefineOptions = { refine: true, decontaminate: true, eps: 2e-3, radius: 2 }
+/** `tighten`: the half-transparent band after the guided filter is stretched so alpha below `tighten` becomes 0 and
+ * above `1 - tighten` becomes 255 (0 = off). */
+export type RefineOptions = {
+  refine: boolean
+  decontaminate: boolean
+  eps: number
+  radius: number
+  tighten: number
+}
+export const DEFAULT_REFINE: RefineOptions = { refine: true, decontaminate: true, eps: 2e-3, radius: 2, tighten: 0.2 }
 
 /** The first look: a small model gives a rough mask from a 320 px copy of the photo while the sharp one runs. */
 export type DraftIn = { type: 'draft'; id: string; image: ImageBitmap }

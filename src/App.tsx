@@ -4,7 +4,7 @@ import { Compare } from './components/Compare'
 import { EditBar } from './components/EditBar'
 import type { BrushSettings, EditorHandle, Tool } from './components/Editor'
 import { useFileIntake } from './components/DropZone'
-import { AlertIcon, CameraIcon, InfoIcon, LockIcon, ResetIcon, Spinner, UploadIcon } from './components/icons'
+import { AlertIcon, CameraIcon, DropMark, InfoIcon, LockIcon, ResetIcon, Spinner, UploadIcon } from './components/icons'
 import { Queue, type Item } from './components/Queue'
 import { Shortcuts } from './components/Shortcuts'
 import { Toolbar } from './components/Toolbar'
@@ -60,6 +60,8 @@ type Look = { id: string; url: string; ratio: number }
 
 /** How long a change must sit still before its full-size render starts. */
 const RENDER_DELAY = 200
+/** Long edge of the picture on stage; Save renders the full size. */
+const DISPLAY_SIDE = 2048
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent)
 
@@ -127,8 +129,17 @@ export default function App() {
     format: Format
     shadow: string
     url: string
+  } | null>(null)
+  // The same render at full size, filled in after `after`: this is what Save and share use.
+  const [full, setFull] = useState<{
+    id: string
+    fill: string | null
+    version: number
+    format: Format
+    shadow: string
     blob: Blob
   } | null>(null)
+  const lastRun = useRef<{ view: View; selected: string | null; done: boolean } | null>(null)
   // The same cut-out in the chosen size (Subject or a preset): the panel previews it and saving uses it.
   const [framed, setFramed] = useState<{
     id: string
@@ -360,6 +371,7 @@ export default function App() {
     setItems([])
     setSelected(null)
     setAfter(null)
+    setFull(null)
     setFramed(null)
     setSticker(null)
     setFill(null)
@@ -394,6 +406,7 @@ export default function App() {
       },
       [onReject],
     ),
+    !how.isOpen,
   )
 
   // Render the selected cut-out with the chosen background.
@@ -405,22 +418,54 @@ export default function App() {
     const r = e?.result
     if (!id || !r) {
       setAfter(null)
+      setFull(null)
       return
     }
-    // Not while editing: every stroke would re-encode a full-size PNG nobody is looking at.
+    // A new view, selection or result renders at once; only tweaks (fill, format, shadow, edits) wait.
+    const prev = lastRun.current
+    const immediate = !prev || prev.view !== view || prev.selected !== selected || prev.done !== selectedDone
+    lastRun.current = { view, selected, done: selectedDone }
+    // Not while editing: every stroke would re-encode a PNG nobody is looking at.
     if (view === 'edit') return
     let cancelled = false
     const version = editVersion
+    const mask = e.edited ?? r.mask
     // Wait for the last change to settle, so dragging a slider doesn't start an encode per step.
-    const timer = setTimeout(() => {
-      exportImage(r.original, e.edited ?? r.mask, fill ?? undefined, r.colors, format, 'photo', images.current, shadow)
-        .then((blob) => {
-          // A superseded run never makes a URL, so there is nothing to revoke for it.
-          if (cancelled) return
-          setAfter({ id, fill, version, format, shadow: shadowId, url: URL.createObjectURL(blob), blob })
-        })
-        .catch(() => {})
-    }, RENDER_DELAY)
+    const timer = setTimeout(
+      () => {
+        // The stage shows a display-size render; the full-size one follows in the background for saving.
+        exportImage(
+          r.original,
+          mask,
+          fill ?? undefined,
+          r.colors,
+          fill ? 'jpg' : 'png',
+          'photo',
+          images.current,
+          shadow,
+          DISPLAY_SIDE,
+        )
+          .then((shown) => {
+            // A superseded run never makes a URL, so there is nothing to revoke for it.
+            if (cancelled) return
+            setAfter({ id, fill, version, format, shadow: shadowId, url: URL.createObjectURL(shown) })
+            return exportImage(
+              r.original,
+              mask,
+              fill ?? undefined,
+              r.colors,
+              format,
+              'photo',
+              images.current,
+              shadow,
+            ).then((blob) => {
+              if (!cancelled) setFull({ id, fill, version, format, shadow: shadowId, blob })
+            })
+          })
+          .catch(() => {})
+      },
+      immediate ? 0 : RENDER_DELAY,
+    )
     return () => {
       cancelled = true
       clearTimeout(timer)
@@ -559,13 +604,13 @@ export default function App() {
     // swatch tap or format change re-renders it, which takes a moment on a large photo).
     const ready =
       frame === 'photo'
-        ? after &&
-          after.id === selected &&
-          after.fill === fill &&
-          after.version === editVersion &&
-          after.format === format &&
-          after.shadow === shadowId
-          ? after.blob
+        ? full &&
+          full.id === selected &&
+          full.fill === fill &&
+          full.version === editVersion &&
+          full.format === format &&
+          full.shadow === shadowId
+          ? full.blob
           : null
         : framed &&
             framed.id === selected &&
@@ -602,7 +647,7 @@ export default function App() {
     a.download = name
     a.click()
     setTimeout(() => URL.revokeObjectURL(a.href), 1000)
-  }, [selected, fill, after, framed, editVersion, format, frame, shadow, shadowId])
+  }, [selected, fill, full, framed, editVersion, format, frame, shadow, shadowId])
 
   const saveSticker = useCallback(async () => {
     const e = selected ? entries.current.get(selected) : undefined
@@ -963,9 +1008,10 @@ export default function App() {
   }, [fade, selected, items, releaseLook])
   const fadeOver = showCompare && fade && fade.id === selected ? fade : null
   const hasItems = items.length > 0
+  const failed = items.findLast((i) => i.state === 'error')
 
   return (
-    <div className="app" {...(hasItems && !how.isOpen ? intake.dragProps : {})}>
+    <div className="app">
       {intake.picker}
       <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {announcement}
@@ -1048,7 +1094,7 @@ export default function App() {
 
         {!hasItems ? (
           <main className="empty">
-            <div className={`sheet drop${intake.over ? ' drop--over' : ''}`} {...intake.dragProps}>
+            <div className={`sheet drop${intake.over ? ' drop--over' : ''}`}>
               <div className="drop__inner">
                 <h1 className="empty__title">
                   Lift <span className="cutword">anything</span> off its background.
@@ -1181,6 +1227,19 @@ export default function App() {
                   </div>
                 ) : selectedItem?.state === 'error' ? (
                   <Failure name={selectedItem.name} message={selectedItem.error} onRetry={intake.open} />
+                ) : selectedItem?.state === 'done' && current?.result ? (
+                  // Compare isn't ready yet: hold the first look (or the photo) where it will appear.
+                  <div className="fade-stack">
+                    {(() => {
+                      const held = fade?.id === selected ? fade : null
+                      const ratio = held?.ratio ?? current.result.original.width / current.result.original.height
+                      return (
+                        <div className="draft" style={{ '--ratio': ratio, aspectRatio: ratio } as CSSProperties}>
+                          <img className="draft__img" src={held?.url ?? current.url} alt="" draggable={false} />
+                        </div>
+                      )
+                    })()}
+                  </div>
                 ) : pending ? (
                   <Pending
                     item={pending}
@@ -1190,13 +1249,10 @@ export default function App() {
                     retrying={retrying}
                     onRetry={retryLoad}
                   />
-                ) : (
-                  <Failure
-                    name={items[items.length - 1]?.name}
-                    message={items[items.length - 1]?.error}
-                    onRetry={intake.open}
-                  />
-                )}
+                ) : !selectedItem && failed ? (
+                  // Nothing is selected (a failed photo is never auto-selected): show the latest failure.
+                  <Failure name={failed.name} message={failed.error} onRetry={intake.open} />
+                ) : null}
               </div>
               <Queue items={items} selected={selected} onSelect={setSelected} onRemove={remove} onAdd={intake.open} />
             </section>
@@ -1247,11 +1303,12 @@ export default function App() {
 
         <Shortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} isMac={isMac} />
 
-        {hasItems && intake.over && (
+        {intake.over && (
           <div className="veil" aria-hidden="true">
-            <div className="veil__box">
-              <UploadIcon width={28} height={28} />
-              Drop to add
+            <div className="veil__frame">
+              <DropMark className="veil__mark" />
+              <p className="veil__title">Drop your images</p>
+              <p className="veil__note">They stay on this device.</p>
             </div>
           </div>
         )}
