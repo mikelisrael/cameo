@@ -65,7 +65,7 @@ export function boxBlur(src: Float32Array, w: number, h: number, r: number, out:
 type Rect = { x0: number; y0: number; x1: number; y1: number }
 
 /** Per cell of g x g pixels: lowest and highest alpha, and whether any pixel is strictly between 0 and 255. */
-function scanCells(alpha: Uint8ClampedArray, w: number, h: number, g: number) {
+function scanCells(alpha: Pixels, w: number, h: number, g: number) {
   const cols = Math.ceil(w / g)
   const rows = Math.ceil(h / g)
   const min = new Uint8Array(cols * rows)
@@ -656,6 +656,108 @@ export function tightenAlpha(alpha: Uint8Array | Uint8ClampedArray, lo: number, 
   const lut = new Uint8Array(256)
   for (let i = 0; i < 256; i++) lut[i] = Math.min(255, Math.max(0, Math.round(((i / 255 - lo) / (hi - lo)) * 255)))
   for (let i = 0; i < alpha.length; i++) alpha[i] = lut[alpha[i]]
+}
+
+// Local contrast (std of luminance) below LOW gets the hard stretch, above HIGH the soft one; measured on the edge band
+// of a dark-on-dark stage photo (low) and hair against a bright backdrop (high).
+const CONTRAST_LOW = 0.06
+const CONTRAST_HIGH = 0.14
+
+/**
+ * Like `tightenAlpha`, but the stretch depends on the photo's local contrast around each soft pixel: `hard` (a wider
+ * band, so a crisper line) where the contrast is low, as on a dark edge against a dark stage, where a soft band reads as
+ * an outline; `soft` where it is high, so fine hair keeps its translucency. In place; alpha 0 and 255 are untouched.
+ * Contrast is only measured in tiles that hold soft pixels, with a border so the blurs are exact at the tile's edge.
+ */
+export function tightenAdaptive(
+  alpha: Pixels,
+  image: Pixels,
+  channels: number,
+  w: number,
+  h: number,
+  soft: number,
+  hard: number,
+): void {
+  hard = Math.min(hard, 0.45)
+  soft = Math.min(soft, hard)
+  const r = Math.max(2, Math.round(0.005 * Math.max(w, h)))
+  // Contrast is smooth at this scale, so on big photos it is measured on a copy at half size: a quarter of the work.
+  const f = Math.max(w, h) > 2048 ? 2 : 1
+  const rs = Math.max(1, Math.round(r / f))
+  const pad = 2 * r // two box blurs of radius r
+  const g = 32
+  const cells = scanCells(alpha, w, h, g)
+  const tiles = activeRects(w, h, g * 4, (t) => {
+    for (let cy = t.y0 / g; cy < Math.ceil(t.y1 / g); cy++) {
+      for (let cx = t.x0 / g; cx < Math.ceil(t.x1 / g); cx++) if (cells.soft[cy * cells.cols + cx]) return true
+    }
+    return false
+  })
+  const regions = tiles.map((t) => ({
+    x0: Math.floor(Math.max(0, t.x0 - pad) / f) * f,
+    y0: Math.floor(Math.max(0, t.y0 - pad) / f) * f,
+    x1: Math.min(w, t.x1 + pad),
+    y1: Math.min(h, t.y1 + pad),
+  }))
+  let cap = 0
+  for (const t of regions) cap = Math.max(cap, Math.ceil((t.x1 - t.x0) / f) * Math.ceil((t.y1 - t.y0) / f))
+  const lum = new Float32Array(cap)
+  const sq = new Float32Array(cap)
+  const m1 = new Float32Array(cap)
+  const m2 = new Float32Array(cap)
+  const tmp = new Float32Array(cap)
+
+  for (let n = 0; n < regions.length; n++) {
+    const R = regions[n]
+    const t = tiles[n]
+    const rw = Math.ceil((R.x1 - R.x0) / f)
+    const rh = Math.ceil((R.y1 - R.y0) / f)
+    for (let y = 0, k = 0; y < rh; y++) {
+      for (let x = 0; x < rw; x++, k++) {
+        let sum = 0
+        let sumSq = 0
+        let n = 0
+        for (let dy = 0; dy < f && R.y0 + y * f + dy < R.y1; dy++) {
+          for (
+            let dx = 0, o = ((R.y0 + y * f + dy) * w + R.x0 + x * f) * channels;
+            dx < f && R.x0 + x * f + dx < R.x1;
+            dx++, o += channels
+          ) {
+            const l = (0.299 * image[o] + 0.587 * image[o + 1] + 0.114 * image[o + 2]) / 255
+            sum += l
+            sumSq += l * l
+            n++
+          }
+        }
+        lum[k] = sum / n
+        sq[k] = sumSq / n
+      }
+    }
+    const N = rw * rh
+    const L = lum.subarray(0, N)
+    const S = sq.subarray(0, N)
+    const A = m1.subarray(0, N)
+    const B = m2.subarray(0, N)
+    const T = tmp.subarray(0, N)
+    boxBlur(L, rw, rh, rs, A, T)
+    boxBlur(S, rw, rh, rs, B, T)
+    for (let i = 0; i < N; i++) L[i] = Math.sqrt(Math.max(0, B[i] - A[i] * A[i]))
+    boxBlur(L, rw, rh, rs, A, T) // A is now the local contrast
+
+    for (let y = t.y0; y < t.y1; y++) {
+      for (let x = t.x0; x < t.x1; x++) {
+        const i = y * w + x
+        const a = alpha[i]
+        if (a === 0 || a === 255) continue
+        const c = A[(((y - R.y0) / f) | 0) * rw + (((x - R.x0) / f) | 0)]
+        const u = Math.min(1, Math.max(0, (c - CONTRAST_LOW) / (CONTRAST_HIGH - CONTRAST_LOW)))
+        const s = u * u * (3 - 2 * u)
+        const lo = hard + (soft - hard) * s
+        const v = Math.round(((a / 255 - lo) / (1 - 2 * lo)) * 255)
+        alpha[i] = v < 0 ? 0 : v > 255 ? 255 : v
+      }
+    }
+  }
 }
 
 /**
