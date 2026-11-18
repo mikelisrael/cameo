@@ -87,3 +87,5 @@ When a new practice or convention is set, write it down in the same session, wit
 - **Phone width:** headless Edge won't go below about 500px wide, so drive it over `--remote-debugging-port` with `Emulation.setDeviceMetricsOverride`, then `Page.captureScreenshot`. An iframe at phone width comes out blank.
 - **A preview's processes:** stop the Vite server and Edge in a command of their own; a kill that matches the shell's own command line ends the shell before the checks run.
 - **Write a script with apostrophes or backticks to a file** with the Write tool, not a shell heredoc.
+- **A scratch Playwright script** (outside the repo) imports `@playwright/test` by its resolved file URL as a default import (`import pw from '<url>'; const { chromium } = pw`): there is no `playwright` package, and the CommonJS module has no named exports.
+- **Edge crops for judging a cut-out** are picked by their alpha, not by eye: a window holding 0, 255 and many soft pixels (18 November 2026: hand and hair crops chosen by position landed inside the subject and showed nothing).

@@ -40,15 +40,24 @@ export type WorkerOut =
   | { type: 'retrying'; attempt: number; of: number }
 
 /** `tighten`: the half-transparent band after the guided filter is stretched so alpha below `tighten` becomes 0 and
- * above `1 - tighten` becomes 255 (0 = off). */
+ * above `1 - tighten` becomes 255 (0 = off). `tightenHard`: the same stretch used where the photo's local contrast is
+ * low, e.g. dark on dark; 0 or <= `tighten` = plain tighten. */
 export type RefineOptions = {
   refine: boolean
   decontaminate: boolean
   eps: number
   radius: number
   tighten: number
+  tightenHard: number
 }
-export const DEFAULT_REFINE: RefineOptions = { refine: true, decontaminate: true, eps: 2e-3, radius: 2, tighten: 0.2 }
+export const DEFAULT_REFINE: RefineOptions = {
+  refine: true,
+  decontaminate: true,
+  eps: 2e-3,
+  radius: 2,
+  tighten: 0.2,
+  tightenHard: 0.4,
+}
 
 /** The first look: a small model gives a rough mask from a 320 px copy of the photo while the sharp one runs. */
 export type DraftIn = { type: 'draft'; id: string; image: ImageBitmap }

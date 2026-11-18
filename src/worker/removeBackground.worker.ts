@@ -8,7 +8,7 @@ import {
   type WorkerIn,
   type WorkerOut,
 } from '../lib/protocol'
-import { decontaminate, refineAlpha, tightenAlpha } from '../lib/refine'
+import { decontaminate, refineAlpha, tightenAdaptive, tightenAlpha } from '../lib/refine'
 import { resumableFetch } from './resumableFetch'
 
 const MODEL_ID = 'onnx-community/BiRefNet_lite-ONNX'
@@ -309,7 +309,11 @@ ctx.onmessage = async (e) => {
           t4 = performance.now()
           if (opts.decontaminate) colors = decontaminate(input.data, input.channels, maskData, w, h)
           // After decontaminate: colours are estimated from the untightened alpha.
-          if (opts.refine && opts.tighten > 0) tightenAlpha(maskData, opts.tighten, 1 - opts.tighten)
+          if (opts.refine && opts.tighten > 0) {
+            if (opts.tightenHard > opts.tighten)
+              tightenAdaptive(maskData, input.data, input.channels, w, h, opts.tighten, opts.tightenHard)
+            else tightenAlpha(maskData, opts.tighten, 1 - opts.tighten)
+          }
           t5 = performance.now()
         } catch (err) {
           console.warn('Refinement skipped:', message(err))
