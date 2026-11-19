@@ -1008,12 +1008,8 @@ kbd {
   border-color: var(--accent);
 }
 
-.queue__item:hover:not(:disabled):not([aria-current])::after {
+.queue__item:hover:not([aria-current])::after {
   border-color: var(--line-strong);
-}
-
-.queue__item:disabled {
-  cursor: default;
 }
 
 .queue__thumb {

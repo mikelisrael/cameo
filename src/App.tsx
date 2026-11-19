@@ -223,7 +223,6 @@ export default function App() {
     looks.current.delete(id)
     setLook((cur) => (cur?.id === id ? null : cur))
     setFade((cur) => (cur?.id === id ? null : cur))
-    setItems((list) => list.map((i) => (i.id === id && i.draft ? { ...i, draft: undefined } : i)))
   }, [])
 
   const lastStatus = useRef<Status>('idle')
@@ -272,7 +271,6 @@ export default function App() {
                 const l = { id, url: URL.createObjectURL(blob), ratio }
                 looks.current.set(id, l)
                 setLook(l)
-                patch(id, { draft: l.url })
               })
               .catch(() => {})
           },
@@ -295,7 +293,7 @@ export default function App() {
             const l = looks.current.get(id)
             setLook((cur) => (cur?.id === id ? null : cur))
             if (l) setFade(l)
-            patch(id, { state: 'done', draft: undefined })
+            patch(id, { state: 'done' })
             const all = itemsRef.current
             const last = all.length >= 2 && all.every((i) => i.id === id || i.state === 'done')
             announce(last ? `All ${all.length} cut-outs ready.` : `${file.name}: cut-out ready.`)
@@ -305,7 +303,7 @@ export default function App() {
             setSelected((s) => s ?? id)
           })
           .catch((err: Error) => {
-            patch(id, { state: 'error', error: err.message, draft: undefined })
+            patch(id, { state: 'error', error: err.message })
             releaseLook(id)
             if (entries.current.has(id)) announce(`${file.name} couldn't be cut out.`)
           })
@@ -1001,7 +999,10 @@ export default function App() {
     ? { width: current.result.original.width, height: current.result.original.height }
     : null
 
-  const pending = items.find((i) => i.state === 'processing') ?? items.find((i) => i.state === 'queued')
+  const pending =
+    (selectedItem?.state === 'processing' || selectedItem?.state === 'queued' ? selectedItem : undefined) ??
+    items.find((i) => i.state === 'processing') ??
+    items.find((i) => i.state === 'queued')
   // The first look fades only over its own image: anything else selected means it has nothing to fade over.
   useEffect(() => {
     if (fade && selected !== fade.id && items.some((i) => i.id === selected)) releaseLook(fade.id)
@@ -1470,7 +1471,15 @@ function Pending({
         ) : (
           <>
             <Spinner />
-            {waiting ? <SetupText progress={progress} /> : look ? 'Sharpening edges…' : 'Removing background…'}
+            {waiting ? (
+              <SetupText progress={progress} />
+            ) : item.state === 'queued' ? (
+              'Waiting its turn…'
+            ) : look ? (
+              'Sharpening edges…'
+            ) : (
+              'Removing background…'
+            )}
           </>
         )}
       </p>
