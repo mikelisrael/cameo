@@ -4,10 +4,12 @@ import {
   DEFAULT_REFINE,
   type Diagnostics,
   type Mask,
+  type RefineOptions,
   type Timings,
   type WorkerIn,
   type WorkerOut,
 } from '../lib/protocol'
+import { createGpuCleaner, type GpuCleaner } from '../lib/gpu/clean'
 import { decontaminate, refineAlpha, tightenAdaptive, tightenAlpha } from '../lib/refine'
 import { resumableFetch } from './resumableFetch'
 
@@ -252,6 +254,77 @@ async function toRawImage(image: ImageBitmap | Blob): Promise<RawImage> {
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
+/** The clean-up on the GPU: started with the worker so the device and shaders are ready when the model is. Null
+ * when there is no usable GPU, or after it failed once (the JS then does every photo). */
+let gpuCleaner: GpuCleaner | null = null
+let gpuDisabled = false
+let cleanerSettled = false
+const cleanerReady = createGpuCleaner()
+  .then((c) => {
+    if (!gpuDisabled) gpuCleaner = c
+  })
+  .catch(() => {})
+  .then(() => {
+    cleanerSettled = true
+  })
+
+const GPU_SETUP_WAIT_MS = 2000
+
+/** Waits a bounded time for the GPU setup; a setup that never settles turns the GPU off for the session. */
+async function waitForGpuCleaner() {
+  if (cleanerSettled) return
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), GPU_SETUP_WAIT_MS)
+  })
+  const result = await Promise.race([cleanerReady, timeout])
+  clearTimeout(timer)
+  if (result === null && !cleanerSettled) {
+    console.warn('GPU clean-up not ready, using the CPU')
+    gpuDisabled = true
+    gpuCleaner = null
+  }
+}
+
+/** Today's JS clean-up: resize the model's mask to the photo's size, then refine, decontaminate and tighten. */
+async function cleanOnCpu(
+  maskTensor: Tensor,
+  input: RawImage,
+  opts: RefineOptions,
+  modelSize: number,
+  compare: boolean,
+) {
+  const maskImage = await RawImage.fromTensor(maskTensor).resize(input.width, input.height)
+  const alpha = new Uint8ClampedArray(maskImage.data)
+  const t3 = performance.now()
+  let maskData: Uint8ClampedArray = alpha
+  let colors: Uint8ClampedArray | undefined
+  let t4 = t3
+  let t5 = t3
+  if (opts.refine || opts.decontaminate) {
+    try {
+      const { width: w, height: h } = input
+      if (opts.refine) maskData = refineAlpha(input.data, input.channels, alpha, w, h, modelSize, opts)
+      t4 = performance.now()
+      if (opts.decontaminate) colors = decontaminate(input.data, input.channels, maskData, w, h)
+      // After decontaminate: colours are estimated from the untightened alpha.
+      if (opts.refine && opts.tighten > 0) {
+        if (opts.tightenHard > opts.tighten)
+          tightenAdaptive(maskData, input.data, input.channels, w, h, opts.tighten, opts.tightenHard)
+        else tightenAlpha(maskData, opts.tighten, 1 - opts.tighten)
+      }
+      t5 = performance.now()
+    } catch (err) {
+      console.warn('Refinement skipped:', message(err))
+    }
+  }
+  // The raw mask must not share a buffer with the refined one, or it would be transferred twice.
+  const raw = compare
+    ? { width: input.width, height: input.height, data: maskData === alpha ? new Uint8ClampedArray(alpha) : alpha }
+    : undefined
+  return { maskData, colors, raw, t3, t4, t5 }
+}
+
 ctx.onmessage = async (e) => {
   const msg = e.data
   if (msg.type === 'load') {
@@ -290,42 +363,57 @@ ctx.onmessage = async (e) => {
       const item = (output[outputNames[0]] as unknown as Tensor[])[0] // a Tensor indexes into its batch
       if ((item.data as Float32Array).some((x) => x < -1e-5 || x > 1 + 1e-5)) item.sigmoid_()
       // Round, don't truncate: the uint8 cast drops the fraction, which turned a solid 255 into 254.
-      const maskImage = await RawImage.fromTensor(item.mul_(255).add_(0.5).clamp_(0, 255).to('uint8')).resize(
-        input.width,
-        input.height,
-      )
-      const alpha = new Uint8ClampedArray(maskImage.data)
-      const t3 = performance.now()
+      const maskTensor = item.mul_(255).add_(0.5).clamp_(0, 255).to('uint8')
+      const maskW = maskTensor.dims[maskTensor.dims.length - 1]
+      const maskH = maskTensor.dims[maskTensor.dims.length - 2]
+      let t3 = performance.now()
 
       const opts = msg.options ?? DEFAULT_REFINE
-      let maskData: Uint8ClampedArray = alpha
-      let colors: Uint8ClampedArray | undefined
-      let t4 = t3
-      let t5 = t3
-      if (opts.refine || opts.decontaminate) {
-        try {
-          const { width: w, height: h } = input
-          if (opts.refine) maskData = refineAlpha(input.data, input.channels, alpha, w, h, diagnostics.size, opts)
-          t4 = performance.now()
-          if (opts.decontaminate) colors = decontaminate(input.data, input.channels, maskData, w, h)
-          // After decontaminate: colours are estimated from the untightened alpha.
-          if (opts.refine && opts.tighten > 0) {
-            if (opts.tightenHard > opts.tighten)
-              tightenAdaptive(maskData, input.data, input.channels, w, h, opts.tighten, opts.tightenHard)
-            else tightenAlpha(maskData, opts.tighten, 1 - opts.tighten)
-          }
-          t5 = performance.now()
-        } catch (err) {
-          console.warn('Refinement skipped:', message(err))
-        }
-      }
       const width = input.width
       const height = input.height
-      // The raw mask must not share a buffer with the refined one, or it would be transferred twice.
-      const raw: Mask | undefined = msg.compare
-        ? { width, height, data: maskData === alpha ? new Uint8ClampedArray(alpha) : alpha }
-        : undefined
-      const transfer = [maskData.buffer, colors?.buffer, raw?.data.buffer].filter(
+      let maskData: Uint8ClampedArray
+      let colors: Uint8ClampedArray | undefined
+      let rawData: Uint8ClampedArray | undefined
+      let cleanup: 'gpu' | 'cpu' = 'cpu'
+      let t4: number
+      let t5: number
+      if (opts.gpu !== false) await waitForGpuCleaner()
+      if (opts.gpu !== false && gpuCleaner) {
+        try {
+          const out = await gpuCleaner.run({
+            image: input.data,
+            channels: input.channels,
+            w: width,
+            h: height,
+            mask: maskTensor.data as Uint8Array,
+            maskW,
+            maskH,
+            opts,
+            modelSize: diagnostics.size,
+            wantRaw: !!msg.compare,
+          })
+          maskData = out.alpha
+          colors = out.colors
+          rawData = out.raw
+          cleanup = 'gpu'
+          t4 = performance.now()
+          t5 = t4
+        } catch (err) {
+          console.warn('GPU clean-up failed, using the CPU:', message(err))
+          gpuCleaner = null
+        }
+      }
+      if (cleanup === 'cpu') {
+        const cpu = await cleanOnCpu(maskTensor, input, opts, diagnostics.size, !!msg.compare)
+        maskData = cpu.maskData
+        colors = cpu.colors
+        rawData = cpu.raw?.data
+        t3 = cpu.t3
+        t4 = cpu.t4
+        t5 = cpu.t5
+      }
+      const raw: Mask | undefined = rawData ? { width, height, data: rawData } : undefined
+      const transfer = [maskData!.buffer, colors?.buffer, raw?.data.buffer].filter(
         (b): b is ArrayBuffer => b instanceof ArrayBuffer,
       )
       const ms = (a: number, b: number) => Math.round(b - a)
@@ -333,12 +421,13 @@ ctx.onmessage = async (e) => {
         prepare: ms(t0, t1),
         cutout: ms(t1, t2),
         mask: ms(t2, t3),
-        refine: ms(t3, t4),
-        decontaminate: ms(t4, t5),
+        refine: ms(t3, t4!),
+        decontaminate: ms(t4!, t5!),
         total: ms(t0, performance.now()),
+        cleanup,
       }
       ctx.postMessage(
-        { type: 'result', id: msg.id, mask: { width, height, data: maskData }, colors, raw, timings },
+        { type: 'result', id: msg.id, mask: { width, height, data: maskData! }, colors, raw, timings },
         transfer,
       )
     } catch (err) {

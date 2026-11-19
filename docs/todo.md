@@ -7,7 +7,7 @@ The roadmap to a state-of-the-art Cameo, written 16 November 2026 from an analys
 **Strong:** private by design (nothing uploaded), no running cost, a calm UI with every state drawn, full-resolution export, batch queue, background colours, reset/remove.
 
 **Weak, in order of how much it hurts:**
-1. **Edge quality on big photos.** The mask is predicted at 1024px (512px on the CPU path) and stretched to the photo's size, so a 3200×4000 portrait gets soft hair and halo edges. This is the gap between us and Photoroom/remove.bg. Better since 18 Nov 2026 (mask rounded so the inside is solid, edge band tightened after colour clean-up: a ~25 px blur became a crisp line), but Israel still wants Photoroom-sharp: next run.
+1. **Edge quality on big photos.** The mask is predicted at 1024px (512px on the CPU path) and stretched to the photo's size, so a 3200×4000 portrait gets soft hair and halo edges. This is the gap between us and Photoroom/remove.bg. Better since 18 Nov 2026 (mask rounded so the inside is solid, edge band tightened after colour clean-up: a ~25 px blur became a crisp line), and since #31 the outline is hard where subject and background are alike. Going further (an on-demand HD pass on edge crops: too slow by default on the CPU path, and it punched holes in hair) needs Israel's call.
 2. **Many machines land on the slow CPU path** (Israel's did), with the 512px model: slower and blurrier. We don't know why, because nothing records it.
 3. **No way to fix a mistake.** Every serious tool has erase/restore brushes (Adobe Express, remove.bg's Magic Brush, Photoroom).
 4. **iPhone photos (HEIC) are rejected,** which is most of what friends will drop.
@@ -65,7 +65,8 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 - [x] (Already in place: the worker loads on mount and the GPU path runs a warm-up.) **Warm start:** begin the model download and session setup while the drop screen shows, so the first photo doesn't wait for it.
 - Saved for later, best first:
   - [ ] An int8 (quantized) CPU model made with ONNX Runtime's tools and hosted on Hugging Face: about 2–3× faster on WASM and a third of the download; judge the edges on `?bench` before switching.
-  - [ ] Run the Phase 1 edge refinement as WebGPU compute (saves ~2–3 s on 12 MP).
+  - [x] (Done 2026-11-19: `src/lib/gpu/`, own GPU device, JS as the silent fallback; 12 MP clean-up ~1 s vs 3–5 s on an Iris Xe that runs the model on the CPU; About this device says "on the GPU" / "on the CPU".) Run the Phase 1 edge refinement as WebGPU compute (saves ~2–3 s on 12 MP).
+  - [ ] In the app the GPU clean-up runs ~1.5–2× slower than alone, matching a run under 4-thread CPU load: try ONNX Runtime's `session.intra_op.allow_spinning = '0'` on the WASM path and measure both the cut-out and the clean-up.
   - [ ] Batch overlap: decode the next photo while the model runs on the current one (lower value now that drafts show at once).
   - [x] (Done 2026-11-17: "About this device" shows start-up and each photo's prep / cut-out / clean-up; a rough U-2-Netp cut-out (4.6 MB, self-hosted) shows first and crossfades to the sharp one; clean-up runs only near the edges, exactly; the model download retries and resumes, with Try again.) Lightning cut-outs.
   - [ ] More machines on the GPU path: GPUs with under 33 storage buffers (Intel Iris Xe class) can't run BiRefNet on WebGPU (ORT's Split kernel binds 1+32 outputs). A graph rewrite runs but was slower than WASM on Intel gen-12lp, and fp16 WebGPU gave a wrong mask there: check fp16 on other GPUs before trusting it.

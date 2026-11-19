@@ -497,7 +497,9 @@ function DeviceDetails({
                 <span className="mono">{seconds(timings.total)}</span>
                 <span className="device__why">
                   {draftMs !== null && `first look ${seconds(draftMs)} · `}cut-out {seconds(timings.cutout)} · clean-up{' '}
-                  {seconds(timings.mask + timings.refine + timings.decontaminate)} · prep {seconds(timings.prepare)}
+                  {seconds(timings.mask + timings.refine + timings.decontaminate)}
+                  {timings.cleanup && ` on the ${timings.cleanup === 'gpu' ? 'GPU' : 'CPU'}`} · prep{' '}
+                  {seconds(timings.prepare)}
                 </span>
               </dd>
             </div>

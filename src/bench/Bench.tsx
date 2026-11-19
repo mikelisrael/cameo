@@ -253,6 +253,14 @@ export default function Bench() {
           />
           Edge refine
         </label>
+        <label className="bench-check">
+          <input
+            type="checkbox"
+            checked={options.gpu}
+            onChange={(e) => setOptions((o) => ({ ...o, gpu: e.target.checked }))}
+          />
+          GPU clean-up
+        </label>
         <label className="bench-slider">
           <span>
             Detail <span className="mono bench-muted">{options.eps.toExponential(1)}</span>
