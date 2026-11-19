@@ -5,8 +5,6 @@ export type Item = {
   name: string
   state: 'queued' | 'processing' | 'done' | 'error'
   thumb: string
-  /** The rough cut-out, shown instead of the photo while the sharp one is made. */
-  draft?: string
   error?: string
   scaled?: { from: { width: number; height: number }; to: { width: number; height: number } }
 }
@@ -37,15 +35,9 @@ export function Queue({ items, selected, onSelect, onRemove, onAdd }: Props) {
             data-state={it.state}
             aria-current={it.id === selected || undefined}
             aria-label={`${it.name}, ${stateLabel[it.state]}`}
-            disabled={it.state === 'queued' || it.state === 'processing'}
             onClick={() => onSelect(it.id)}
           >
-            <img
-              src={(it.state === 'processing' && it.draft) || it.thumb}
-              alt=""
-              className="queue__thumb"
-              draggable={false}
-            />
+            <img src={it.thumb} alt="" className="queue__thumb" draggable={false} />
             {it.state === 'processing' && (
               <span className="queue__overlay">
                 <Spinner />
