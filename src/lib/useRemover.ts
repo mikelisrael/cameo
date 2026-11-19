@@ -50,6 +50,21 @@ const DRAFT_SIZE = 320
  * fight over the processor: on a busy CPU the small model would take several times longer. */
 const DRAFT_HEAD_START_MS = 2500
 
+/** A photo waiting for its turn. `decode` is set once its page-side decode has started early. */
+type Job = { file: File; isCancelled?: () => boolean; decode?: Promise<Decoded> }
+
+/** Frees a skipped job's early decode, if it has one: its bitmap and URL. */
+async function discard(job: Job) {
+  if (!job.decode) return
+  try {
+    const early = await job.decode
+    early.bitmap.close()
+    URL.revokeObjectURL(early.url)
+  } catch {
+    // it failed, so there is nothing to free
+  }
+}
+
 type Pending = { resolve: (r: Result) => void; reject: (e: Error) => void; decoded: Decoded; opts?: ProcessOpts }
 
 export function useRemover() {
@@ -69,6 +84,8 @@ export function useRemover() {
   const [fellBack, setFellBack] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const chain = useRef<Promise<unknown>>(Promise.resolve())
+  const queued = useRef<Job[]>([])
+  const inWorker = useRef(false) // the current photo has reached the worker, so the next one may decode early
   const draftWorker = useRef<Worker | null>(null)
   const draftBroken = useRef(false) // the draft worker's script failed: the sharp path goes on without it
   const draftWaiting = useRef(new Map<string, { done: (mask: Mask) => void; settle: () => void }>())
@@ -240,20 +257,41 @@ export function useRemover() {
     spawn(lastLoad.current.forceWasm, lastLoad.current.reason)
   }, [spawn])
 
+  /** Decode the next photo while the current one is in the worker. Only one ahead: a decoded photo can be
+   * ~96 MB, so the queue never holds more than one. */
+  const decodeAhead = useCallback(() => {
+    if (queued.current.some((j) => j.decode)) return
+    const job = queued.current.find((j) => !j.isCancelled?.())
+    if (!job) return
+    job.decode = decodeImage(job.file)
+    // An early failure isn't unhandled here; the job's own await still rejects at its turn.
+    job.decode.catch(() => {})
+  }, [])
+
   const run = useCallback(
     async (
-      file: File,
+      job: Job,
       onStart?: () => void,
-      isCancelled?: () => boolean,
       onDecoded?: (d: Decoded) => void,
       opts?: ProcessOpts,
       onDraft?: (mask: Mask) => void,
     ): Promise<Result> => {
-      if (isCancelled?.()) throw new Error('Cancelled')
-      if (!workerRef.current) throw new Error('Worker not available')
+      const { file, isCancelled } = job
+      queued.current = queued.current.filter((j) => j !== job)
+      if (isCancelled?.()) {
+        // Skipped, but an early decode may already be done: free its bitmap and URL.
+        await discard(job)
+        throw new Error('Cancelled')
+      }
+      if (!workerRef.current) {
+        await discard(job)
+        throw new Error('Worker not available')
+      }
       onStart?.()
-      const decoded = await decodeImage(file)
+      const decoded = await (job.decode ?? decodeImage(file))
       onDecoded?.(decoded)
+      inWorker.current = true // photos dropped from now on are decoded ahead by process
+      decodeAhead() // the current photo is about to go to the worker
       const id = crypto.randomUUID()
       active.current++
       setStatus((s) => (s === 'error' ? s : loaded.current ? 'processing' : 'loading'))
@@ -295,12 +333,13 @@ export function useRemover() {
         decoded.bitmap.close()
         throw e
       } finally {
+        inWorker.current = false
         draftWaiting.current.delete(id) // a draft arriving after this is dropped
         active.current--
         setStatus((s) => (s === 'error' ? s : active.current > 0 ? 'processing' : loaded.current ? 'ready' : 'loading'))
       }
     },
-    [postDraft],
+    [postDraft, decodeAhead],
   )
 
   /** Sequential: each call waits for the previous one to finish. `isCancelled` is asked when its
@@ -314,11 +353,14 @@ export function useRemover() {
       opts?: ProcessOpts,
       onDraft?: (mask: Mask) => void,
     ): Promise<Result> => {
-      const next = chain.current.then(() => run(file, onStart, isCancelled, onDecoded, opts, onDraft))
+      const job: Job = { file, isCancelled }
+      queued.current.push(job)
+      if (inWorker.current) decodeAhead() // dropped while another photo is in the worker: decode it now
+      const next = chain.current.then(() => run(job, onStart, onDecoded, opts, onDraft))
       chain.current = next.catch(() => undefined)
       return next
     },
-    [run],
+    [run, decodeAhead],
   )
 
   return {
