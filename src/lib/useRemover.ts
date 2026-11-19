@@ -47,11 +47,21 @@ async function postCopy(worker: Worker, id: string, bitmap: ImageBitmap, opts?: 
 const DRAFT_SIZE = 320
 
 /** With the sharp model already running, it waits this long (at most) for the first look, so the two don't
- * fight over the processor: on a busy CPU the small model would take several times longer. */
+ * fight over the processor: on a busy CPU the small model would take several times longer. A queued photo's
+ * first look is made early, beside the current photo's sharp run, so at its turn this wait is normally over. */
 const DRAFT_HEAD_START_MS = 2500
 
-/** A photo waiting for its turn. `decode` is set once its page-side decode has started early. */
-type Job = { file: File; isCancelled?: () => boolean; decode?: Promise<Decoded> }
+/** A photo waiting for its turn. `decode` is set once its page-side decode has started early; then, if it
+ * wants a first look, `id` and `draft` too: the first look is made early and `draft` settles with its mask
+ * (null when there is none). `draft` never rejects. */
+type Job = {
+  file: File
+  isCancelled?: () => boolean
+  onDraft?: (mask: Mask) => void
+  decode?: Promise<Decoded>
+  id?: string
+  draft?: Promise<Mask | null>
+}
 
 /** Frees a skipped job's early decode, if it has one: its bitmap and URL. */
 async function discard(job: Job) {
@@ -266,24 +276,42 @@ export function useRemover() {
     job.decode = decodeImage(job.file)
     // An early failure isn't unhandled here; the job's own await still rejects at its turn.
     job.decode.catch(() => {})
+    if (!job.onDraft) return
+    // Its first look is made now, beside the current photo's sharp run, so it is ready at its turn.
+    const id = (job.id = crypto.randomUUID())
+    job.draft = job.decode.then(
+      (d) =>
+        new Promise<Mask | null>((resolve) => {
+          if (job.isCancelled?.() || job.id !== id) return resolve(null)
+          let got: Mask | null = null
+          draftWaiting.current.set(id, { done: (m) => (got = m), settle: () => resolve(got) })
+          void postDraft(id, d.bitmap)
+        }),
+      () => null,
+    )
+  }, [postDraft])
+
+  /** A skipped job gives up its early first look, so nothing waits on it. */
+  const dropDraft = useCallback((job: Job) => {
+    if (!job.id) return
+    const waiting = draftWaiting.current.get(job.id)
+    draftWaiting.current.delete(job.id)
+    waiting?.settle()
+    job.id = undefined
   }, [])
 
   const run = useCallback(
-    async (
-      job: Job,
-      onStart?: () => void,
-      onDecoded?: (d: Decoded) => void,
-      opts?: ProcessOpts,
-      onDraft?: (mask: Mask) => void,
-    ): Promise<Result> => {
-      const { file, isCancelled } = job
+    async (job: Job, onStart?: () => void, onDecoded?: (d: Decoded) => void, opts?: ProcessOpts): Promise<Result> => {
+      const { file, isCancelled, onDraft } = job
       queued.current = queued.current.filter((j) => j !== job)
       if (isCancelled?.()) {
         // Skipped, but an early decode may already be done: free its bitmap and URL.
+        dropDraft(job)
         await discard(job)
         throw new Error('Cancelled')
       }
       if (!workerRef.current) {
+        dropDraft(job)
         await discard(job)
         throw new Error('Worker not available')
       }
@@ -292,7 +320,7 @@ export function useRemover() {
       onDecoded?.(decoded)
       inWorker.current = true // photos dropped from now on are decoded ahead by process
       decodeAhead() // the current photo is about to go to the worker
-      const id = crypto.randomUUID()
+      const id = job.id ?? crypto.randomUUID()
       active.current++
       setStatus((s) => (s === 'error' ? s : loaded.current ? 'processing' : 'loading'))
       try {
@@ -303,7 +331,22 @@ export function useRemover() {
           if (!worker) return reject(new Error('Worker not available'))
           // The rough mask comes back long before the sharp one, even while the big model is still downloading.
           let headStart: Promise<void> | undefined
-          if (onDraft) {
+          if (onDraft && job.draft) {
+            // Made early, while the previous photo was in the sharp model: show it now, don't post another.
+            const early = job.draft
+            void early.then((mask) => {
+              if (mask && pending.current.has(id)) onDraft(mask)
+            })
+            if (loaded.current) {
+              headStart = new Promise<void>((resolve) => {
+                const timer = setTimeout(resolve, DRAFT_HEAD_START_MS)
+                void early.then(() => {
+                  clearTimeout(timer)
+                  resolve()
+                })
+              })
+            }
+          } else if (onDraft) {
             const first = new Promise<void>((resolve) => {
               const timer = setTimeout(resolve, DRAFT_HEAD_START_MS)
               draftWaiting.current.set(id, {
@@ -339,7 +382,7 @@ export function useRemover() {
         setStatus((s) => (s === 'error' ? s : active.current > 0 ? 'processing' : loaded.current ? 'ready' : 'loading'))
       }
     },
-    [postDraft, decodeAhead],
+    [postDraft, decodeAhead, dropDraft],
   )
 
   /** Sequential: each call waits for the previous one to finish. `isCancelled` is asked when its
@@ -353,10 +396,10 @@ export function useRemover() {
       opts?: ProcessOpts,
       onDraft?: (mask: Mask) => void,
     ): Promise<Result> => {
-      const job: Job = { file, isCancelled }
+      const job: Job = { file, isCancelled, onDraft }
       queued.current.push(job)
       if (inWorker.current) decodeAhead() // dropped while another photo is in the worker: decode it now
-      const next = chain.current.then(() => run(job, onStart, onDecoded, opts, onDraft))
+      const next = chain.current.then(() => run(job, onStart, onDecoded, opts))
       chain.current = next.catch(() => undefined)
       return next
     },
