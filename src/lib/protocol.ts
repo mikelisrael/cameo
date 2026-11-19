@@ -8,6 +8,7 @@ export type Timings = {
   refine: number // guided-filter sharpening
   decontaminate: number // removing the old background's colour from the edges
   total: number
+  cleanup?: 'gpu' | 'cpu' // which processor ran the clean-up
 }
 
 export type Diagnostics = {
@@ -49,6 +50,8 @@ export type RefineOptions = {
   radius: number
   tighten: number
   tightenHard: number
+  /** Run the clean-up on the GPU when it can; false = always the JS. */
+  gpu: boolean
 }
 export const DEFAULT_REFINE: RefineOptions = {
   refine: true,
@@ -57,6 +60,7 @@ export const DEFAULT_REFINE: RefineOptions = {
   radius: 2,
   tighten: 0.2,
   tightenHard: 0.4,
+  gpu: true,
 }
 
 /** The first look: a small model gives a rough mask from a 320 px copy of the photo while the sharp one runs. */
