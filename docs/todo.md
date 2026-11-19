@@ -68,7 +68,7 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
   - [x] (Done 2026-11-19: `src/lib/gpu/`, own GPU device, JS as the silent fallback; 12 MP clean-up ~1 s vs 3–5 s on an Iris Xe that runs the model on the CPU; About this device says "on the GPU" / "on the CPU".) Run the Phase 1 edge refinement as WebGPU compute (saves ~2–3 s on 12 MP).
   - [ ] ~~ORT `allow_spinning = '0'` on the WASM path~~ Not built (2026-11-19): measured in the app on this laptop (12 MP, model on WASM with 4 threads, clean-up on the GPU, 5 runs each). A second clean-up run straight after the first takes as long as the first (A 732 vs 817 ms), so nothing left over from inference slows it. Spinning off: clean-up 636 ms, cut-out 12.1 s vs 12.8 s, inside the noise. The cut-out ran at 10–14 s, far above normal, so the machine was busy, and the in-app vs alone gap is most likely that load rather than the app. Revisit only with a profile on a quiet machine.
   - [x] (Done 2026-11-19: the page opens the next queued photo while the current one is in the worker, one ahead at most, in `useRemover.ts`; ~0.5 s per 27 MP JPEG, more for HEIC.) Batch overlap: decode the next photo while the model runs on the current one (lower value now that drafts show at once).
-  - [ ] In a batch, each photo after the first waits up to 2.5 s (`DRAFT_HEAD_START_MS`) for its first look before the sharp model starts, so on the CPU path the model idles ~2.5 s per photo (measured 2026-11-19, 3 × 27 MP on WASM). Either skip the head start in a batch when the first look is slow, or make the next photo's first look while the current one is in the model (they share the CPU on the WASM path). Needs Israel's call.
+  - [x] (Done 2026-11-19: the next photo's first look is made while the current one is in the model, in `useRemover.ts`; at its turn it shows at once and the sharp model starts without the head start.) In a batch, each photo after the first waits up to 2.5 s (`DRAFT_HEAD_START_MS`) for its first look before the sharp model starts, so on the CPU path the model idles ~2.5 s per photo (measured 2026-11-19, 3 × 27 MP on WASM). Israel's call (2026-11-19): make the next photo's first look while the current one is in the model.
   - [x] (Done 2026-11-17: "About this device" shows start-up and each photo's prep / cut-out / clean-up; a rough U-2-Netp cut-out (4.6 MB, self-hosted) shows first and crossfades to the sharp one; clean-up runs only near the edges, exactly; the model download retries and resumes, with Try again.) Lightning cut-outs.
   - [ ] More machines on the GPU path: GPUs with under 33 storage buffers (Intel Iris Xe class) can't run BiRefNet on WebGPU (ORT's Split kernel binds 1+32 outputs). A graph rewrite runs but was slower than WASM on Intel gen-12lp, and fp16 WebGPU gave a wrong mask there: check fp16 on other GPUs before trusting it.
 
@@ -78,7 +78,7 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 - [x] **More backgrounds:** blurred photo (portrait-mode look), Studio / Sky / Sunset gradients, your own image (kept in memory only), all through undo like a colour (`src/lib/background.ts`).
 - [x] Optional from review: the background image picker uses `accept="image/*"`; use `ACCEPT_ATTR` so HEIC/AVIF files without a MIME type aren't greyed out on Windows. A pick that finishes after Start over should be dropped.
 - [x] **Crop and size presets:** Whole · Fit (trimmed to the subject with room) · 1:1 (1080, shops) · 4:5 (1080×1350, Instagram post) · 9:16 (1080×1920, story/status), subject centred on the chosen background, a preview in the panel; download, share and ZIP use it.
-- [ ] Passport photo preset: needs Israel's call on which country's rules (size, head height, background).
+- [ ] Passport photo preset. Israel (2026-11-19): "full auto pilot", so Jarvis picks the rules (leaning: 35×45 mm, the most common, and 2×2 in).
 - [x] **Sticker export:** "Download as sticker": 512×512 WebP (PNG where WebP can't be made), 16 px margin, ≤100 KB; shares on phones. (outline dropped 2026-11-17 at Israel's request)
 - [x] Formats: PNG, WebP (where the browser can encode it), JPG (white when the background is clear); **download all as ZIP** (fflate, stored); the current background and format apply to the whole batch, each image with its own edits.
 - [x] Share straight to apps (Web Share API) on phones: "Save or share" since Phase 0, now in every format.
@@ -92,14 +92,14 @@ Israel, 16 Nov 2026: "make sure it is mobile native". Most friends will use it o
 - [x] Accessibility audit (screen reader pass through the whole flow, focus order, reduced motion). Done 2026-11-17: one polite announcer, named slider and canvas, workspace h1, axe clean in both themes. The Edit brush stays pointer-only (freehand painting).
 - [x] (Done: `pnpm e2e`, CI on every PR, #25.) Playwright e2e for the core flow (drop → cut-out → background → download) running on the CPU path, so CI needs no GPU.
 - [x] (Done 2026-11-17: first screen 90.6 kB gzip, guarded by `scripts/check-budget.mjs` in `pnpm check`; the Editor loads on demand, prefetched after the first cut-out; the download bar weighs only model weights and never moves back; "Start-up" counts from opening the page.) Performance budget: first screen under 100 KB of JS, model download progress honest, warm start under 3 s.
-- [ ] Counting usage without images (page views and "cut-out made" counts only), if Israel wants numbers; check it against the privacy rule first.
+- [ ] Counting usage without images (page views and "cut-out made" counts only), Israel (2026-11-19): "as long as it doesn't cost me do the best": a free, cookieless counter with no image data, checked against the privacy rule first.
 
 ## Phase 5: beyond the others (state of the art)
 
 Each of these needs a decision from Israel first, because they cost download size or break "nothing is uploaded".
 
 - [ ] **Object removal / clean-up** (erase a stray thing from the photo) with an on-device inpainting model (LaMa in ONNX).
-- [ ] **Upscaling** small product photos (Swin2SR in transformers.js).
+- [ ] **Upscaling** small product photos (Swin2SR in transformers.js). Israel chose this as the next Phase 5 item (2026-11-19).
 - [ ] **AI backgrounds** (product in a generated scene, Photoroom's headline feature): on-device diffusion is heavy; a server would break the privacy promise. Decide the trade-off before any work.
 - [ ] Relighting the subject to match a new background.
 - [ ] Video background removal (short clips, on-device).
