@@ -12,6 +12,20 @@ export function shadowKey(s: Shadow): string {
   return `${s.kind}:${s.strength.toFixed(2)}:${s.kind === 'drop' ? Math.round(s.angle) : 0}`
 }
 
+/** Shift the subject's light toward the picked background. Experimental; strength is 0 to 1. */
+export type Match = { on: boolean; strength: number }
+
+export const NO_MATCH: Match = { on: false, strength: 0.6 }
+
+/** Equality key for pre-render matching; the strength only counts when matching is on. */
+export function matchKey(m: Match): string {
+  if (!m.on || m.strength <= 0) return 'off'
+  return `m${m.strength}`
+}
+
+/** Recolours `subject` in place toward `backdrop` (see relight.ts). */
+export type MatchFn = (subject: HTMLCanvasElement, backdrop: HTMLCanvasElement, strength: number) => void
+
 /**
  * Paints the shadow in output coordinates, before the subject. `box` is the subject's box on the
  * output; `src` and `dst` are the same rectangles `drawImage` uses for the subject itself.
@@ -66,6 +80,7 @@ export function cutout(
   colors?: Uint8ClampedArray,
   images?: Map<string, ImageBitmap>,
   shadow: Shadow = NO_SHADOW,
+  match?: { strength: number; apply: MatchFn },
 ): HTMLCanvasElement {
   const w = original.width
   const h = original.height
@@ -118,6 +133,7 @@ export function cutout(
   out.height = h
   const o = out.getContext('2d')!
   if (fill) paintBackground(o, fill, w, h, { original, images })
+  if (fill && match) match.apply(subject, out, match.strength)
   const box = photoBox(mask, w, h)
   if (box) {
     paintShadow(o, subject, box, { sx: 0, sy: 0, sw: w, sh: h }, { dx: 0, dy: 0, dw: w, dh: h }, w, shadow)
@@ -424,9 +440,15 @@ export async function exportImage(
   maxSide?: number,
   /** Passport frame only: the size, sheet option and detected faces. */
   passport?: Passport,
+  match: Match = NO_MATCH,
 ): Promise<Blob> {
   // JPG has no transparency: without a picked background it gets white rather than black.
   const background = fill ?? (format === 'jpg' ? '#ffffff' : undefined)
+  // Only a picked background is matched, not the white a JPG gets by default. Loaded on demand.
+  const matcher =
+    fill && match.on && match.strength > 0 && frame !== 'passport'
+      ? { strength: match.strength, apply: (await import('./relight')).matchSubject }
+      : undefined
   let canvas: HTMLCanvasElement
   if (frame === 'photo') {
     const k = maxSide ? Math.min(1, maxSide / Math.max(original.width, original.height)) : 1
@@ -437,12 +459,12 @@ export async function exportImage(
         resizeQuality: 'high',
       })
       try {
-        canvas = cutout(small, mask, background, colors, images, shadow)
+        canvas = cutout(small, mask, background, colors, images, shadow, matcher)
       } finally {
         small.close()
       }
     } else {
-      canvas = cutout(original, mask, background, colors, images, shadow)
+      canvas = cutout(original, mask, background, colors, images, shadow, matcher)
     }
   } else if (frame === 'passport' && passport) {
     canvas = renderPassport(original, mask, fill ?? null, colors, passport)
@@ -457,6 +479,7 @@ export async function exportImage(
     if (background) {
       paintBackground(c, background, l.outW, l.outH, { original, images })
     }
+    if (matcher) matcher.apply(subject, canvas, matcher.strength)
     c.imageSmoothingQuality = 'high'
     if (box) {
       // The subject's box in output pixels: the photo box mapped through the same crop and scale.
