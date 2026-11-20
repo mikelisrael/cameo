@@ -11,6 +11,8 @@ export type Result = {
   raw?: Mask
   scaled?: Decoded['scaled']
   url: string
+  /** The photo's size before it was upscaled; set once it has been. */
+  upscaledFrom?: { width: number; height: number }
 }
 
 export type ProcessOpts = { options?: RefineOptions; compare?: boolean }

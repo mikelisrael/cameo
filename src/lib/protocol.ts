@@ -97,3 +97,12 @@ export type SegOut =
   | { type: 'dropped'; id: string } // the worker evicted this image's embedding to stay within its cache
   | { type: 'decoded'; id: string; req: number; seg: Seg | null }
   | { type: 'error'; id?: string; req?: number; message: string }
+
+/** 2x upscaling: Swin2SR in a lazy worker. */
+export type UpIn = { type: 'load' } | { type: 'run'; job: number; image: ImageBitmap; mask: Mask; colors: boolean } // colors: also recompute edge colours
+export type UpOut =
+  | { type: 'progress'; progress: number } // 0..100, the model download
+  | { type: 'ready' }
+  | { type: 'tiles'; job: number; done: number; total: number }
+  | { type: 'done'; job: number; image: ImageBitmap; mask: Mask; colors?: Uint8ClampedArray } // 2x photo, 2x model mask
+  | { type: 'error'; job?: number; message: string }

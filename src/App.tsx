@@ -42,12 +42,14 @@ import {
   type Shadow,
 } from './lib/compose'
 import { ACCEPT_ATTR, decodeImage } from './lib/decode'
-import { isDirty, newHistory, push, redo, undo, type History } from './lib/history'
+import { isDirty, newHistory, push, redo, undo, type History, type Step } from './lib/history'
 import type { Face, Mask } from './lib/protocol'
+import { canUpscale, scaleMask } from './lib/upscale'
 import { useFaceFinder } from './lib/useFaceFinder'
 import { useHowItWorks } from './lib/useHowItWorks'
 import { useRemover, type Result, type Status } from './lib/useRemover'
 import { useSegmenter } from './lib/useSegmenter'
+import { useUpscaler } from './lib/useUpscaler'
 import { useAccent } from './lib/useAccent'
 import { useTheme } from './lib/useTheme'
 
@@ -187,6 +189,9 @@ export default function App() {
   const seg = useSegmenter()
   const segRef = useRef(seg)
   segRef.current = seg
+  const up = useUpscaler()
+  const upRef = useRef(up)
+  upRef.current = up
   const faceFinder = useFaceFinder()
   const faceRef = useRef(faceFinder)
   faceRef.current = faceFinder
@@ -347,6 +352,10 @@ export default function App() {
     const e = entries.current.get(id)
     if (!e) return
     if (e.url) URL.revokeObjectURL(e.url)
+    // Upscale steps hold the other sizes of the photo: free them all, the current one last.
+    for (const s of [...e.history.done, ...e.history.undone])
+      if (s.kind === 'upscale')
+        for (const o of [s.before.result.original, s.after.result.original]) if (o !== e.result?.original) o.close()
     e.result?.original.close()
     entries.current.delete(id)
     revealed.current.delete(id)
@@ -830,6 +839,8 @@ export default function App() {
 
   const current = selected ? entries.current.get(selected) : undefined
   const hasResult = !!current?.result
+  const uiRef = useRef({ view, tool, selected })
+  uiRef.current = { view, tool, selected }
 
   // Another image: back to Compare.
   useEffect(() => {
@@ -851,14 +862,70 @@ export default function App() {
     [selected],
   )
 
+  // A step let go of by a later push no longer needs the photo size that can't be reached any more.
+  const dropStep = useCallback((s: Step, side: 'undone' | 'trimmed') => {
+    if (s.kind !== 'upscale') return
+    if (side === 'undone') s.after.result.original.close()
+    else s.before.result.original.close()
+  }, [])
+
+  // Puts another size of the photo (and its mask) in place; face and select data are in photo pixels.
+  const swap = useCallback((id: string, e: Entry, result: Result, edited: Mask | undefined) => {
+    e.result = result
+    e.edited = edited
+    segRef.current.drop(id)
+    const ui = uiRef.current
+    if (ui.view === 'edit' && ui.tool === 'select' && ui.selected === id) segRef.current.prepare(id, result.original)
+    faceRef.current.forget(id)
+    setEditVersion((v) => v + 1)
+    setEditorVersion((v) => v + 1)
+    rerender()
+  }, [])
+
+  // The only place the upscaler is asked to run: a tap on Upscale (or Try again).
+  const startUpscale = useCallback(() => {
+    const id = selected
+    const e = id ? entries.current.get(id) : undefined
+    const before = e?.result
+    if (!id || !e || !before || !canUpscale(before) || upRef.current.busy) return
+    upRef.current
+      .upscale(id, before.original, before.mask, !!before.colors)
+      .then(({ image, mask, colors }) => {
+        // The photo was removed, or undo or Start over changed it meanwhile: this size is not wanted.
+        if (entries.current.get(id) !== e || e.result !== before) return image.close()
+        const after: Result = {
+          ...before,
+          original: image,
+          mask,
+          colors,
+          raw: undefined,
+          upscaledFrom: { width: before.original.width, height: before.original.height },
+        }
+        // The mask as it is now, so strokes made while this ran are kept.
+        const editedBefore = e.edited
+        const editedAfter = editedBefore ? scaleMask(editedBefore, image.width, image.height) : undefined
+        swap(id, e, after, editedAfter)
+        push(
+          e.history,
+          {
+            kind: 'upscale',
+            before: { result: before, edited: editedBefore },
+            after: { result: after, edited: editedAfter },
+          },
+          dropStep,
+        )
+      })
+      .catch(() => {}) // the hook's error state shows it
+  }, [selected, swap, dropStep])
+
   const onStroke = useCallback(
     (p: MaskPatch) => {
       const e = selected ? entries.current.get(selected) : undefined
       if (!e) return
-      push(e.history, { kind: 'mask', patch: p })
+      push(e.history, { kind: 'mask', patch: p }, dropStep)
       setEditVersion((v) => v + 1)
     },
-    [selected],
+    [selected, dropStep],
   )
 
   // Select needs the photo read once; start as soon as the tool is open on a ready image.
@@ -888,7 +955,7 @@ export default function App() {
           if (!s || entries.current.get(id) !== e || e.edited !== m) return
           const patch = applyPick(m.data, m.width, s, pick)
           if (!patch) return
-          push(e.history, { kind: 'mask', patch })
+          push(e.history, { kind: 'mask', patch }, dropStep)
           setEditVersion((v) => v + 1)
           setEditorVersion((v) => v + 1)
         })
@@ -897,7 +964,7 @@ export default function App() {
           if (tapSeq.current === seq) setTapPoint(null) // a newer tap owns the marker now
         })
     },
-    [tapPoint, selected, pick],
+    [tapPoint, selected, pick, dropStep],
   )
 
   const stepHistory = useCallback(
@@ -908,6 +975,9 @@ export default function App() {
       if (!step) return
       if (step.kind === 'fill') {
         setFill(dir === 'undo' ? step.from : step.to)
+      } else if (step.kind === 'upscale') {
+        const s = dir === 'undo' ? step.before : step.after
+        swap(selected!, e, s.result, s.edited)
       } else if (e.edited) {
         if (step.kind === 'mask')
           applyPatch(e.edited.data, e.edited.width, step.patch, dir === 'undo' ? 'before' : 'after')
@@ -917,17 +987,18 @@ export default function App() {
       }
       rerender()
     },
-    [selected],
+    [selected, swap],
   )
 
   const changeFill = useCallback(
     (next: string | null) => {
       const e = selected ? entries.current.get(selected) : undefined
       // The custom colour picker fires onCustom and onFill together, on every drag tick: not history.
-      if (e?.result && next !== fill && !fromPicker.current) push(e.history, { kind: 'fill', from: fill, to: next })
+      if (e?.result && next !== fill && !fromPicker.current)
+        push(e.history, { kind: 'fill', from: fill, to: next }, dropStep)
       setFill(next)
     },
-    [selected, fill],
+    [selected, fill, dropStep],
   )
 
   const changeCustom = useCallback((hex: string) => {
@@ -969,10 +1040,10 @@ export default function App() {
     const before = new Uint8ClampedArray(e.edited.data)
     const after = new Uint8ClampedArray(e.result.mask.data)
     e.edited.data.set(after)
-    push(e.history, { kind: 'reset', before, after })
+    push(e.history, { kind: 'reset', before, after }, dropStep)
     setEditVersion((v) => v + 1)
     setEditorVersion((v) => v + 1)
-  }, [selected])
+  }, [selected, dropStep])
 
   // Keyboard: undo/redo in both views; tools, brush size, zoom and hold-Space-for-original in Edit.
   const onKey = useRef<(e: KeyboardEvent, down: boolean) => void>(() => {})
@@ -1320,7 +1391,7 @@ export default function App() {
                     }
                   >
                     <Editor
-                      key={selected}
+                      key={`${selected}:${current.edited.width}`}
                       ref={editorRef}
                       original={current.result.original}
                       mask={current.edited}
@@ -1437,6 +1508,31 @@ export default function App() {
                 onSticker={saveSticker}
                 zipping={zipping}
                 onShortcuts={() => setShortcutsOpen(true)}
+                upscale={
+                  selected
+                    ? {
+                        offer: canUpscale(current.result),
+                        from: { width: current.result.original.width, height: current.result.original.height },
+                        to: { width: current.result.original.width * 2, height: current.result.original.height * 2 },
+                        state: up.busy === selected ? up.state : 'idle',
+                        progress: up.progress,
+                        tiles: up.busy === selected ? up.tiles : null,
+                        elsewhere: !!up.busy && up.busy !== selected,
+                        failed: up.state === 'error' || up.failedFor === selected,
+                        upscaledFrom: current.result.upscaledFrom ?? null,
+                        canUndo: (() => {
+                          const last = current.history.done.at(-1)
+                          return last?.kind === 'upscale' && last.after.result === current.result
+                        })(),
+                      }
+                    : null
+                }
+                onUpscale={startUpscale}
+                onUpscaleRetry={() => {
+                  up.retry()
+                  startUpscale()
+                }}
+                onUpscaleUndo={() => stepHistory('undo')}
               />
             ) : (
               <aside className="panel panel--waiting">

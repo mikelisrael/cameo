@@ -1364,7 +1364,41 @@ kbd {
   color: var(--ink-3);
 }
 
+/* The upscale offer: words on the left, the action stays on the right. */
+.panel__upscale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.panel__upscale-text {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.panel__upscale-text > p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.panel__upscale-text > .panel__meta {
+  color: var(--ink-3);
+  text-align: left;
+}
+
+.panel__upscale-btn {
+  flex-shrink: 0;
+}
+
 @media (max-width: 600px) {
+  .panel__upscale-btn {
+    min-height: 44px;
+  }
+
   .device__summary {
     min-height: 44px;
   }
