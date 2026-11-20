@@ -16,7 +16,7 @@
 ## Features
 
 - **One step.** Drop, paste or pick images (or take a photo on your phone) and get a cut-out in seconds.
-- **Private by design.** The AI model runs on your device in a Web Worker. Nothing is sent to a server.
+- **Private by design.** The AI model runs on your device in a Web Worker. Your photos are never sent to a server; the only thing sent is an anonymous count of visits and cut-outs ([GoatCounter](https://www.goatcounter.com), no cookies).
 - **Full resolution.** Exports at your photo's original size.
 - **Batch.** Add as many images as you like; they're processed one after another.
 - **Backgrounds.** Transparent, white, black, soft presets or any colour.
