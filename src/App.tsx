@@ -44,8 +44,10 @@ import {
 import { ACCEPT_ATTR, decodeImage } from './lib/decode'
 import { isDirty, newHistory, push, redo, undo, type History, type Step } from './lib/history'
 import type { Face, Mask } from './lib/protocol'
+import { applyPhotoPatch, cropForFill, pasteFill } from './lib/photoPatch'
 import { canUpscale, scaleMask } from './lib/upscale'
 import { useFaceFinder } from './lib/useFaceFinder'
+import { useInpainter } from './lib/useInpainter'
 import { useHowItWorks } from './lib/useHowItWorks'
 import { useRemover, type Result, type Status } from './lib/useRemover'
 import { useSegmenter } from './lib/useSegmenter'
@@ -192,6 +194,15 @@ export default function App() {
   const up = useUpscaler()
   const upRef = useRef(up)
   upRef.current = up
+  const inpaint = useInpainter()
+  const inpaintRef = useRef(inpaint)
+  inpaintRef.current = inpaint
+  // The image being filled by Clean up, and whether the last fill failed.
+  const [filling, setFilling] = useState<string | null>(null)
+  const fillingRef = useRef<string | null>(null)
+  const [cleanFailed, setCleanFailed] = useState(false)
+  // Undo/redo of a photo step is async: one at a time.
+  const stepping = useRef(false)
   const faceFinder = useFaceFinder()
   const faceRef = useRef(faceFinder)
   faceRef.current = faceFinder
@@ -204,6 +215,8 @@ export default function App() {
   const [editVersion, setEditVersion] = useState(0)
   // Bumped only when the mask changed outside the editor's own strokes, so it redraws.
   const [editorVersion, setEditorVersion] = useState(0)
+  // Bumped when the photo's own pixels change (Clean up, or undo/redo of it).
+  const [photoVersion, setPhotoVersion] = useState(0)
   const [, rerender] = useReducer((n: number) => n + 1, 0)
   const editorRef = useRef<EditorHandle>(null)
   const fromPicker = useRef(false)
@@ -669,7 +682,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [selected, selectedDone])
+  }, [selected, selectedDone, photoVersion])
   const blurUrl = blur && blur.id === selected ? blur.url : null
 
   // WebP is offered only where the browser really encodes it.
@@ -862,6 +875,50 @@ export default function App() {
     [selected],
   )
 
+  const modeRef = useRef({ view, tool })
+  modeRef.current = { view, tool }
+
+  // The photo's pixels changed (a fill, or undo/redo of one): everything made from it is made again.
+  const photoChanged = useCallback(
+    (id: string) => {
+      const url = blurUrls.current.get(id)
+      if (url) {
+        URL.revokeObjectURL(url)
+        blurUrls.current.delete(id)
+      }
+      setBlur((cur) => (cur?.id === id ? null : cur))
+      setPhotoVersion((v) => v + 1)
+      setEditVersion((v) => v + 1)
+      setEditorVersion((v) => v + 1)
+      rerender()
+      // Select re-reads the new photo: drop the old embedding, and embed again if Select is open on it.
+      segRef.current.drop(id)
+      const m = modeRef.current
+      const e = entries.current.get(id)
+      const next = e?.result?.original
+      if (m.view === 'edit' && m.tool === 'select' && next) segRef.current.prepare(id, next)
+      // Compare's "before" is an image URL, not the bitmap: point it at the cleaned photo.
+      if (!e || !next) return
+      const c = document.createElement('canvas')
+      c.width = next.width
+      c.height = next.height
+      c.getContext('2d')!.drawImage(next, 0, 0)
+      c.toBlob(
+        (b) => {
+          c.width = c.height = 0
+          if (!b || entries.current.get(id) !== e || e.result?.original !== next) return // a newer change owns it
+          if (e.url) URL.revokeObjectURL(e.url)
+          e.url = URL.createObjectURL(b)
+          patch(id, { thumb: e.url })
+          rerender()
+        },
+        'image/jpeg',
+        0.92,
+      )
+    },
+    [patch],
+  )
+
   // A step let go of by a later push no longer needs the photo size that can't be reached any more.
   const dropStep = useCallback((s: Step, side: 'undone' | 'trimmed') => {
     if (s.kind !== 'upscale') return
@@ -888,11 +945,15 @@ export default function App() {
     const e = id ? entries.current.get(id) : undefined
     const before = e?.result
     if (!id || !e || !before || !canUpscale(before) || upRef.current.busy) return
+    // The photo is locked while it is changing: a clean-up (or its undo) on it must land first.
+    if (fillingRef.current === id || stepping.current) return
+    const src = before.original
     upRef.current
       .upscale(id, before.original, before.mask, !!before.colors)
       .then(({ image, mask, colors }) => {
         // The photo was removed, or undo or Start over changed it meanwhile: this size is not wanted.
-        if (entries.current.get(id) !== e || e.result !== before) return image.close()
+        // A clean-up (or its undo) swaps the bitmap in place, so compare it too.
+        if (entries.current.get(id) !== e || e.result !== before || before.original !== src) return image.close()
         const after: Result = {
           ...before,
           original: image,
@@ -905,6 +966,7 @@ export default function App() {
         const editedBefore = e.edited
         const editedAfter = editedBefore ? scaleMask(editedBefore, image.width, image.height) : undefined
         swap(id, e, after, editedAfter)
+        photoChanged(id)
         push(
           e.history,
           {
@@ -916,7 +978,7 @@ export default function App() {
         )
       })
       .catch(() => {}) // the hook's error state shows it
-  }, [selected, swap, dropStep])
+  }, [selected, swap, dropStep, photoChanged])
 
   const onStroke = useCallback(
     (p: MaskPatch) => {
@@ -927,6 +989,49 @@ export default function App() {
     },
     [selected, dropStep],
   )
+
+  const onClean = useCallback(
+    async (hole: Uint8ClampedArray) => {
+      if (fillingRef.current) return
+      const id = selected
+      const e = id ? entries.current.get(id) : undefined
+      const r = e?.result
+      const m = e?.edited ?? r?.mask
+      if (!id || !e || !r || !m) return
+      // The photo is locked while an upscale replaces it.
+      if (upRef.current.busy === id) return
+      const src = r.original
+      const crop = cropForFill(src, hole, m.width, m.height)
+      if (!crop) return
+      fillingRef.current = id
+      setFilling(id)
+      setCleanFailed(false)
+      try {
+        const out = await inpaintRef.current.fill(crop.image, crop.hole, crop.mw, crop.mh)
+        // The image was removed, or an upscale (or its undo) replaced the photo meanwhile: drop this fill.
+        if (entries.current.get(id) !== e || e.result !== r || r.original !== src) return
+        const photo = src
+        const patch = pasteFill(photo, crop, out)
+        const next = await applyPhotoPatch(photo, patch, 'after')
+        if (entries.current.get(id) !== e || e.result !== r || r.original !== src) return
+        // The old bitmap is never closed: an export in flight may still draw it.
+        r.original = next
+        push(e.history, { kind: 'photo', patch })
+        photoChanged(id)
+      } catch {
+        if (inpaintRef.current.status === 'ready') setCleanFailed(true)
+      } finally {
+        fillingRef.current = null
+        setFilling(null)
+      }
+    },
+    [selected, photoChanged],
+  )
+
+  // A failed-fill note belongs to the tool: leaving it clears it.
+  useEffect(() => {
+    setCleanFailed(false)
+  }, [tool, selected])
 
   // Select needs the photo read once; start as soon as the tool is open on a ready image.
   useEffect(() => {
@@ -968,26 +1073,46 @@ export default function App() {
   )
 
   const stepHistory = useCallback(
-    (dir: 'undo' | 'redo') => {
-      const e = selected ? entries.current.get(selected) : undefined
-      if (!e?.result) return
+    async (dir: 'undo' | 'redo') => {
+      if (fillingRef.current || stepping.current) return
+      const id = selected
+      const e = id ? entries.current.get(id) : undefined
+      if (!id || !e?.result) return
+      // The photo is locked while an upscale replaces it.
+      if (upRef.current.busy === id) return
       const step = (dir === 'undo' ? undo : redo)(e.history)
       if (!step) return
+      if (step.kind === 'photo') {
+        stepping.current = true
+        try {
+          const r = e.result,
+            src = r.original
+          const next = await applyPhotoPatch(src, step.patch, dir === 'undo' ? 'before' : 'after')
+          // The image was removed, or another change replaced the photo meanwhile: drop this step's bitmap.
+          if (entries.current.get(id) !== e || e.result !== r || r.original !== src) return next.close()
+          r.original = next
+          photoChanged(id)
+        } finally {
+          stepping.current = false
+        }
+        return
+      }
       if (step.kind === 'fill') {
         setFill(dir === 'undo' ? step.from : step.to)
       } else if (step.kind === 'upscale') {
         const s = dir === 'undo' ? step.before : step.after
-        swap(selected!, e, s.result, s.edited)
+        swap(id, e, s.result, s.edited)
+        photoChanged(id)
       } else if (e.edited) {
         if (step.kind === 'mask')
           applyPatch(e.edited.data, e.edited.width, step.patch, dir === 'undo' ? 'before' : 'after')
-        else e.edited.data.set(dir === 'undo' ? step.before : step.after)
+        else if (step.kind === 'reset') e.edited.data.set(dir === 'undo' ? step.before : step.after)
         setEditVersion((v) => v + 1)
         setEditorVersion((v) => v + 1)
       }
       rerender()
     },
-    [selected, swap],
+    [selected, swap, photoChanged],
   )
 
   const changeFill = useCallback(
@@ -1036,7 +1161,7 @@ export default function App() {
 
   const resetEdits = useCallback(() => {
     const e = selected ? entries.current.get(selected) : undefined
-    if (!e?.result || !e.edited) return
+    if (!e?.result || !e.edited || upRef.current.busy === selected) return
     const before = new Uint8ClampedArray(e.edited.data)
     const after = new Uint8ClampedArray(e.result.mask.data)
     e.edited.data.set(after)
@@ -1123,6 +1248,9 @@ export default function App() {
         break
       case 'r':
         setTool('restore')
+        break
+      case 'c':
+        setTool('clean')
         break
       case 'v':
       case 'h':
@@ -1379,6 +1507,15 @@ export default function App() {
                   onRedo={() => stepHistory('redo')}
                   canReset={!!current.edited && isDirty(current.history)}
                   onReset={resetEdits}
+                  clean={{
+                    status: inpaint.status,
+                    progress: inpaint.progress,
+                    known: inpaint.known,
+                    filling: filling !== null,
+                    failed: cleanFailed,
+                    upscaling: up.busy === selected,
+                  }}
+                  onCleanRetry={inpaint.retry}
                 />
               )}
               <div className="sheet stage">
@@ -1406,6 +1543,8 @@ export default function App() {
                       version={editorVersion}
                       onStroke={onStroke}
                       onTap={onTap}
+                      onClean={onClean}
+                      filling={filling !== null || up.busy === selected} // an upscale locks the photo too
                       pending={tapPoint}
                       still={view !== 'edit'}
                     />
@@ -1518,6 +1657,7 @@ export default function App() {
                         progress: up.progress,
                         tiles: up.busy === selected ? up.tiles : null,
                         elsewhere: !!up.busy && up.busy !== selected,
+                        cleaning: filling === selected,
                         failed: up.state === 'error' || up.failedFor === selected,
                         upscaledFrom: current.result.upscaledFrom ?? null,
                         canUndo: (() => {
