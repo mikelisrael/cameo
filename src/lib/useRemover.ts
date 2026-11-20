@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { countCutout } from './count'
 import { decodeImage, type Decoded } from './decode'
 import type { Diagnostics, DraftIn, DraftOut, Mask, RefineOptions, Timings, WorkerIn, WorkerOut } from './protocol'
 
@@ -197,6 +198,7 @@ export function useRemover() {
         if (p) {
           const { bitmap, scaled, url } = p.decoded
           p.resolve({ original: bitmap, mask: m.mask, colors: m.colors, raw: m.raw, scaled, url })
+          countCutout()
         }
       } else if (m.type === 'gpu-failed') {
         setForceWasm(true)

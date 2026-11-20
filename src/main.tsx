@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './styles.css'
 import App from './App.tsx'
 import { registerSW } from 'virtual:pwa-register'
+import { countPageView } from './lib/count'
 
 // Updates wait for every tab to close; skipping waiting under open tabs strands them on deleted chunks.
 registerSW({ immediate: true })
@@ -22,3 +23,5 @@ createRoot(document.getElementById('root')!).render(
     )}
   </StrictMode>,
 )
+
+if (!bench) countPageView()

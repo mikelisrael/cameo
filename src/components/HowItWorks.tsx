@@ -78,7 +78,9 @@ export default function HowItWorks({ hasItems, onClose, onChoose }: Props) {
         </div>
         <p className="how-facts__note">
           Besides the page and its fonts, the only downloads are the models, from Hugging Face, and the code that runs
-          them. Nothing made from your photos is ever sent anywhere. The code is open to check:{' '}
+          them. Nothing made from your photos is ever sent anywhere. Cameo counts two things, with no cookies: that the
+          page was opened, and that a cut-out was made. The count carries nothing from your photos, and stops when your
+          browser asks sites not to track. The code is open to check:{' '}
           <a className="footer__link" href="https://github.com/mikelisrael/cameo" target="_blank" rel="noreferrer">
             Code on GitHub
           </a>
