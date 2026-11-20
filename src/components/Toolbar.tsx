@@ -150,6 +150,8 @@ type Props = {
     tiles: { done: number; total: number } | null
     /** Another photo is being upscaled. */
     elsewhere: boolean
+    /** A clean-up is changing this photo: it can be upscaled once that lands. */
+    cleaning: boolean
     failed: boolean
     upscaledFrom: { width: number; height: number } | null
     canUndo: boolean
@@ -236,7 +238,7 @@ function UpscaleBlock({
               type="button"
               className="button button--quiet button--sm panel__upscale-btn"
               onClick={onUpscale}
-              disabled={working || u.elsewhere}
+              disabled={working || u.elsewhere || u.cleaning}
             >
               Upscale
               {working && <Spinner />}
@@ -247,6 +249,7 @@ function UpscaleBlock({
             <UpscaleBar label="Upscaling" value={u.tiles ? u.tiles.done / Math.max(1, u.tiles.total) : 0} />
           )}
           {u.elsewhere && notice("Another photo is upscaling. This one can go when it's done.")}
+          {u.cleaning && !working && notice('Waiting for the clean-up to finish')}
         </>
       )}
       {u.upscaledFrom && !working && (

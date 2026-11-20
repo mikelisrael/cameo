@@ -15,7 +15,7 @@ import { Stroke, type Rect } from '../lib/brush'
 import type { MaskPatch } from '../lib/maskPatch'
 import type { Mask } from '../lib/protocol'
 
-export type Tool = 'move' | 'select' | 'erase' | 'restore'
+export type Tool = 'move' | 'select' | 'erase' | 'restore' | 'clean'
 export type BrushSettings = { size: number; softness: number; smart: boolean }
 export type EditorHandle = { zoomIn(): void; zoomOut(): void; fit(): void }
 
@@ -36,6 +36,9 @@ type Props = {
   onTap?: (p: { x: number; y: number }) => void
   pending?: { x: number; y: number } | null
   still?: boolean // take no input (the editor stays up while Compare catches up)
+  /** Clean up: a stroke was released; `hole` is mask-sized, >0 where brushed. */
+  onClean?: (hole: Uint8ClampedArray) => void
+  filling?: boolean // a fill is running: no new strokes, the mark stays
   ref?: Ref<EditorHandle>
 }
 
@@ -96,6 +99,8 @@ export function Editor({
   onTap,
   pending,
   still,
+  onClean,
+  filling,
   ref,
 }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -108,6 +113,10 @@ export function Editor({
   const ghostRef = useRef<HTMLCanvasElement>(null)
   const cutRef = useRef<HTMLCanvasElement>(null)
   const ringRef = useRef<HTMLDivElement>(null)
+  const markRef = useRef<HTMLCanvasElement>(null)
+  const hole = useRef<Uint8ClampedArray | null>(null)
+  const markRgb = useRef<[number, number, number]>([224, 83, 44])
+  const cleanStroke = useRef(false)
 
   const [pct, setPct] = useState(100)
 
@@ -377,6 +386,62 @@ export function Editor({
     if (!flushRaf.current) flushRaf.current = requestAnimationFrame(flush)
   }
 
+  /* ---------- clean-up mark ---------- */
+
+  const clearMark = () => {
+    const c = markRef.current
+    c?.getContext('2d')?.clearRect(0, 0, c.width, c.height)
+  }
+
+  // The brand colour as 8-bit rgb: a 1x1 canvas turns whatever the token holds into pixels.
+  const resolveBrand = (): [number, number, number] => {
+    const vp = viewportRef.current
+    const g = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
+    if (!vp || !g) return [224, 83, 44]
+    g.canvas.width = g.canvas.height = 1
+    g.fillStyle = getComputedStyle(vp).getPropertyValue('--brand').trim() || '#e0532c'
+    g.fillRect(0, 0, 1, 1)
+    const d = g.getImageData(0, 0, 1, 1).data
+    return [d[0], d[1], d[2]]
+  }
+
+  // Draws the brushed area live: brand colour, alpha from the hole buffer.
+  const paintMark = (r: Rect | null) => {
+    const ctx = markRef.current?.getContext('2d')
+    const h = hole.current
+    if (!r || !ctx || !h || r.w <= 0 || r.h <= 0) return
+    const [cr, cg, cb] = markRgb.current
+    const out = new ImageData(r.w, r.h)
+    for (let y = 0; y < r.h; y++) {
+      for (let x = 0; x < r.w; x++) {
+        const o = (y * r.w + x) * 4
+        out.data[o] = cr
+        out.data[o + 1] = cg
+        out.data[o + 2] = cb
+        out.data[o + 3] = h[(r.y + y) * mask.width + r.x + x]
+      }
+    }
+    ctx.putImageData(out, r.x, r.y)
+  }
+
+  const paint = (r: Rect | null) => (cleanStroke.current ? paintMark(r) : markDirty(r))
+
+  // The mark is sized to the mask (which also clears it) and the buffer follows.
+  useLayoutEffect(() => {
+    const c = markRef.current
+    if (c) {
+      c.width = mask.width
+      c.height = mask.height
+    }
+    hole.current = null
+  }, [mask.width, mask.height])
+
+  // The mark stays while a fill runs, then goes; it never outlives the tool.
+  useEffect(() => {
+    if (!filling || tool !== 'clean') clearMark()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filling, tool])
+
   useEffect(
     () => () => {
       cancelAnimationFrame(flushRaf.current)
@@ -435,7 +500,10 @@ export function Editor({
     const s = stroke.current
     stroke.current = null
     paintId.current = -1
-    if (s) {
+    if (s && cleanStroke.current) {
+      s.cancel()
+      clearMark()
+    } else if (s) {
       markDirty(s.cancel())
       flush()
     }
@@ -465,14 +533,29 @@ export function Editor({
       mode.current = 'pan'
       tapStart.current =
         tool === 'select' && isPrimary ? { id: e.pointerId, x: e.clientX, y: e.clientY, ok: true } : null
+    } else if (tool === 'clean' && filling) {
+      // A fill is running: no stroke until it lands (pinch and pan still work).
     } else {
       const { x, y } = toMask(e.clientX, e.clientY)
       const radius = Math.max(0.5, brush.size / 2 / view.current.s)
-      const s = new Stroke(mask.data, mask.width, mask.height, tool, radius, brush.softness)
+      const clean = tool === 'clean'
+      let s: Stroke
+      if (clean) {
+        if (!hole.current || hole.current.length !== mask.width * mask.height) {
+          hole.current = new Uint8ClampedArray(mask.width * mask.height)
+        }
+        hole.current.fill(0)
+        clearMark()
+        markRgb.current = resolveBrand()
+        s = new Stroke(hole.current, mask.width, mask.height, 'restore', radius, 0)
+      } else {
+        s = new Stroke(mask.data, mask.width, mask.height, tool as 'erase' | 'restore', radius, brush.softness)
+      }
+      cleanStroke.current = clean
       stroke.current = s
       paintId.current = e.pointerId
       mode.current = 'paint'
-      markDirty(s.dab(x, y))
+      paint(s.dab(x, y))
     }
     syncRing()
   }
@@ -509,7 +592,7 @@ export function Editor({
         const list = native.getCoalescedEvents?.()
         for (const ev of list && list.length ? list : [native]) {
           const { x, y } = toMask(ev.clientX, ev.clientY)
-          markDirty(stroke.current.dab(x, y))
+          paint(stroke.current.dab(x, y))
         }
       }
     }
@@ -533,7 +616,16 @@ export function Editor({
       const s = stroke.current
       stroke.current = null
       paintId.current = -1
-      if (cancelled) {
+      if (cleanStroke.current) {
+        if (cancelled) {
+          s.cancel()
+          clearMark()
+        } else {
+          const { patch } = s.finish()
+          if (patch && hole.current) onClean?.(new Uint8ClampedArray(hole.current))
+          else clearMark()
+        }
+      } else if (cancelled) {
         markDirty(s.cancel())
         flush()
       } else {
@@ -556,7 +648,8 @@ export function Editor({
     onShowOriginal(true)
   }
 
-  const ghostOpacity = showOriginal ? 1 : tool === 'move' || tool === 'select' ? 0 : 0.28
+  const whole = showOriginal || tool === 'clean'
+  const ghostOpacity = whole ? 1 : tool === 'move' || tool === 'select' ? 0 : 0.28
   const bgStyle: CSSProperties = cssBackground(fill, { blurUrl, imageUrls })
 
   return (
@@ -586,10 +679,11 @@ export function Editor({
         <canvas
           ref={cutRef}
           className="editor__cut"
-          style={{ visibility: showOriginal ? 'hidden' : 'visible' }}
+          style={{ visibility: whole ? 'hidden' : 'visible' }}
           role="img"
           aria-label="The cut-out you're editing. Paint with a mouse, finger or pen to erase or restore."
         />
+        <canvas ref={markRef} className="editor__mark" data-busy={filling || undefined} aria-hidden="true" />
       </div>
       {pending && <span ref={tapElRef} className="editor__tap" aria-hidden />}
       <div ref={ringRef} className="editor__cursor" style={{ width: brush.size, height: brush.size }} />

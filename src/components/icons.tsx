@@ -173,6 +173,15 @@ export const EraserIcon = (p: P) => (
   </svg>
 )
 
+/** Clean up: a wand with a spark at its tip and two small ones beside it. */
+export const CleanIcon = (p: P) => (
+  <svg {...base(p)}>
+    <path d="m4 20 10.5-10.5" />
+    <path d="M16.5 3v2.5M16.5 9.5V12M12 7.5h2.5M18.5 7.5H21" />
+    <path d="M7.5 4v2M6.5 5h2M20 15.5v2M19 16.5h2" />
+  </svg>
+)
+
 export const BrushIcon = (p: P) => (
   <svg {...base(p)}>
     <path d="M14.5 5.5 19 10 11 18l-4.5-4.5z" />

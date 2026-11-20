@@ -106,3 +106,18 @@ export type UpOut =
   | { type: 'tiles'; job: number; done: number; total: number }
   | { type: 'done'; job: number; image: ImageBitmap; mask: Mask; colors?: Uint8ClampedArray } // 2x photo, 2x model mask
   | { type: 'error'; job?: number; message: string }
+
+/** Object removal: MI-GAN in a lazy worker. */
+export type InpaintIn = {
+  type: 'fill'
+  req: number
+  width: number
+  height: number
+  image: Uint8ClampedArray
+  hole: Uint8Array
+} // image RGBA w*h*4; hole w*h, 1 = fill
+export type InpaintOut =
+  | { type: 'progress'; progress: number } // 0..100, the model download
+  | { type: 'ready' }
+  | { type: 'filled'; req: number; image: Uint8ClampedArray; ms: number } // RGBA w*h*4
+  | { type: 'error'; req?: number; message: string }

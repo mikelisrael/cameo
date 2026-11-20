@@ -1,4 +1,5 @@
 import type { MaskPatch } from './maskPatch'
+import type { PhotoPatch } from './photoPatch'
 import type { Mask } from './protocol'
 import type { Result } from './useRemover'
 
@@ -8,6 +9,7 @@ export type Snap = { result: Result; edited?: Mask }
 export type Step =
   | { kind: 'mask'; patch: MaskPatch }
   | { kind: 'fill'; from: string | null; to: string | null }
+  | { kind: 'photo'; patch: PhotoPatch }
   | { kind: 'reset'; before: Uint8ClampedArray; after: Uint8ClampedArray }
   | { kind: 'upscale'; before: Snap; after: Snap }
 
@@ -28,11 +30,13 @@ const snapWeight = ({ result: r, edited }: Snap) =>
 const weight = (s: Step) =>
   s.kind === 'mask'
     ? s.patch.before.byteLength + s.patch.after.byteLength
-    : s.kind === 'reset'
-      ? s.before.byteLength + s.after.byteLength
-      : s.kind === 'upscale'
-        ? snapWeight(s.before) + snapWeight(s.after)
-        : 0
+    : s.kind === 'photo'
+      ? s.patch.before.byteLength + s.patch.after.byteLength
+      : s.kind === 'reset'
+        ? s.before.byteLength + s.after.byteLength
+        : s.kind === 'upscale'
+          ? snapWeight(s.before) + snapWeight(s.after)
+          : 0
 
 /**
  * Records a step, drops the redo list, and trims the oldest steps past the caps. `drop` hears each step

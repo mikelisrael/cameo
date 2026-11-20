@@ -2868,6 +2868,7 @@ kbd {
 
 .editbar__note[data-state='downloading']::before,
 .editbar__note[data-state='embedding']::before,
+.editbar__note[data-state='filling']::before,
 .editbar__note[data-state='idle']::before {
   content: '';
   flex-shrink: 0;
@@ -2884,6 +2885,54 @@ kbd {
 
 .editbar__note[data-state='error'] .button {
   margin-left: 2px;
+}
+
+/* Clean up: the brush lays a see-through accent mark on the photo. While the area fills, the mark breathes;
+   when the mended photo arrives the mark is cleared. The accent here is a mark on the photo, never chrome. */
+.editor__mark {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.editor__mark[data-busy] {
+  animation: mark-breathe 1.2s ease-in-out infinite;
+}
+
+@keyframes mark-breathe {
+  50% {
+    opacity: 0.22;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editor__mark[data-busy] {
+    animation: none;
+    opacity: 0.32;
+  }
+}
+
+/* Five tools on a phone: equal columns, each an icon over its word, like a camera roll's edit row. */
+@media (max-width: 720px) {
+  .seg--tools {
+    display: grid;
+    width: 100%;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+
+  .seg--tools .seg__btn {
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    min-height: 52px;
+    padding: 4px 2px;
+    font-size: 12px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
 }
 
 @media (max-width: 600px) {

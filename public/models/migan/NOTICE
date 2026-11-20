@@ -1,0 +1,1 @@
+MI-GAN ONNX model (migan_pipeline_v2.onnx) from https://huggingface.co/andraniksargsyan/migan, by Picsart AI Research (https://github.com/Picsart-AI-Research/MI-GAN), Sargsyan et al., "MI-GAN: A Simple Baseline for Image Inpainting on Mobile Devices", ICCV 2023. Licensed under MIT (code and weights), see LICENSE.

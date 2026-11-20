@@ -52,6 +52,7 @@ export function Shortcuts({ open, onClose, isMac }: Props) {
           <Row label="Erase" keys={['E']} />
           <Row label="Restore" keys={['R']} />
           <Row label="Select an object" keys={['S']} />
+          <Row label="Clean up" keys={['C']} />
           <Row label="Move" keys={['V']} />
           <Row label="Smaller or bigger brush" keys={['[', ']']} or />
           <Row label="Zoom in or out" keys={['+', '−']} or />
