@@ -1194,6 +1194,34 @@ kbd {
   object-fit: contain;
 }
 
+.panel__frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+  line-height: 0;
+}
+
+/* The wrapper has no set height, so the image carries the preview's inner height (120px less its border). */
+.panel__frame img {
+  max-height: 118px;
+}
+
+.panel__guide {
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  height: 0;
+  border-top: 1px solid var(--brand);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.panel__notice .button {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 /* The panel's foot: where the photo is processed, and what this device is doing about it. */
 .panel__foot {
   display: flex;
