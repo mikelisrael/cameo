@@ -1,5 +1,5 @@
-import { paintBackground } from './background'
-import type { Mask } from './protocol'
+import { isColor, paintBackground } from './background'
+import type { Face, Mask } from './protocol'
 
 /** A shadow made from the cut-out itself. Angle 0 is light from the top (the shadow falls down). */
 export type Shadow = { kind: 'none' | 'contact' | 'drop'; strength: number; angle: number }
@@ -166,7 +166,7 @@ const MIME: Record<Format, string> = { png: 'image/png', webp: 'image/webp', jpg
 const QUALITY: Record<Format, number | undefined> = { png: undefined, webp: 0.9, jpg: 0.92 }
 
 /** How the cut-out is framed: the whole photo, trimmed to the subject, or a preset canvas. */
-export type Frame = 'photo' | 'subject' | 'square' | 'portrait' | 'story'
+export type Frame = 'photo' | 'subject' | 'square' | 'portrait' | 'story' | 'passport'
 
 /** Output sizes of the preset frames, in pixels. */
 const FRAMES: Record<'square' | 'portrait' | 'story', { width: number; height: number }> = {
@@ -212,7 +212,7 @@ function photoBox(mask: Mask, photoW: number, photoH: number): Box | null {
   }
 }
 
-type Layout = {
+export type Layout = {
   outW: number
   outH: number
   /** The region of the full-size cut-out to draw… */
@@ -237,10 +237,15 @@ export function layout(frame: Frame, box: Box | null, photoW: number, photoH: nu
     const h = Math.min(photoH, box.y + box.h + pad) - y0
     return { outW: w, outH: h, sx: x0, sy: y0, sw: w, sh: h, dx: 0, dy: 0, dw: w, dh: h }
   }
-  if (frame === 'photo' || frame === 'subject') {
+  if (frame === 'photo' || frame === 'subject' || frame === 'passport') {
     return { outW: photoW, outH: photoH, sx: 0, sy: 0, sw: photoW, sh: photoH, dx: 0, dy: 0, dw: photoW, dh: photoH }
   }
   const { width: outW, height: outH } = FRAMES[frame]
+  return centred(outW, outH, box, photoW, photoH)
+}
+
+/** The preset-canvas placement: the subject box (or the whole photo when none) centred with a margin. */
+function centred(outW: number, outH: number, box: Box | null, photoW: number, photoH: number): Layout {
   // No subject found: centre the whole photo instead.
   const r = box ?? { x: 0, y: 0, w: photoW, h: photoH }
   const k = Math.min((0.88 * outW) / r.w, (0.88 * outH) / r.h)
@@ -260,8 +265,146 @@ export function layout(frame: Frame, box: Box | null, photoW: number, photoH: nu
   }
 }
 
+export type PassportSize = '35x45' | '2x2'
+export type Passport = { size: PassportSize; sheet: boolean; faces: Face[] | null } // null: faces not known
+export type PassportIssue = 'no-face' | 'faces' | 'top-cut' | 'shoulders-cut' | 'tilted' | 'background' | 'small'
+
+/** Single-photo canvas, head height and crown/eye placement per size, in pixels at 300 dpi. */
+const PASSPORT = {
+  '35x45': { w: 413, h: 531, head: 395 },
+  '2x2': { w: 600, h: 600, head: 354 },
+} as const
+
+const SHEET_W = 1800
+const SHEET_H = 1200
+const SHEET_GAP = 24
+const CUT_LINE = '#c8c8c8'
+const PPM_300 = 11811 // pixels per metre at 300 dpi
+
+function sheetGrid(size: PassportSize) {
+  const { w, h } = PASSPORT[size]
+  const cols = Math.max(1, Math.floor((SHEET_W - 2 * SHEET_GAP + SHEET_GAP) / (w + SHEET_GAP)))
+  const rows = Math.max(1, Math.floor((SHEET_H - 2 * SHEET_GAP + SHEET_GAP) / (h + SHEET_GAP)))
+  return { cols, rows, w, h }
+}
+
+function luminance(hex: string): number {
+  let h = hex.slice(1)
+  if (h.length === 3 || h.length === 4) h = [...h].map((c) => c + c).join('')
+  const lin = (i: number) => {
+    const v = parseInt(h.slice(i, i + 2), 16) / 255
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * lin(0) + 0.7152 * lin(2) + 0.0722 * lin(4)
+}
+
+/** The passport background: white, or the chosen plain colour when it is light enough. */
+function passportBackground(fill: string | null): { color: string; ok: boolean } {
+  if (fill === null) return { color: '#ffffff', ok: true }
+  if (isColor(fill) && luminance(fill) >= 0.8) return { color: fill, ok: true }
+  return { color: '#ffffff', ok: false }
+}
+
+/** First photo row (from the top) with alpha 128 or more in the columns x0..x1 (photo pixels). */
+function crownRow(mask: Mask, photoW: number, photoH: number, x0: number, x1: number): number | null {
+  const kx = photoW / mask.width
+  const ky = photoH / mask.height
+  const a = Math.max(0, Math.floor(x0 / kx))
+  const b = Math.min(mask.width - 1, Math.floor(x1 / kx))
+  for (let y = 0; y < mask.height; y++) {
+    for (let x = a; x <= b; x++) if (mask.data[y * mask.width + x] >= 128) return y * ky
+  }
+  return null
+}
+
+/** Where the head lands on the passport canvas by the official rules, and what is wrong with the photo. */
+export function passportFit(
+  faces: Face[] | null,
+  mask: Mask,
+  photoW: number,
+  photoH: number,
+  size: PassportSize,
+  fill: string | null,
+): { layout: Layout; issues: PassportIssue[]; guides: { crown: number; chin: number } | null; sheetCount: number } {
+  const spec = PASSPORT[size]
+  const { cols, rows } = sheetGrid(size)
+  const sheetCount = cols * rows
+  const issues = new Set<PassportIssue>()
+  if (!passportBackground(fill).ok) issues.add('background')
+
+  const kept = (faces ?? []).filter((f) => f.score >= 0.6).sort((a, b) => b.box.w * b.box.h - a.box.w * a.box.h)
+  const face = kept[0]
+  const order: PassportIssue[] = ['no-face', 'faces', 'top-cut', 'shoulders-cut', 'tilted', 'background', 'small']
+  const done = (layout: Layout, guides: { crown: number; chin: number } | null) => ({
+    layout,
+    issues: order.filter((i) => issues.has(i)),
+    guides,
+    sheetCount,
+  })
+  if (!face) {
+    if (faces) issues.add('no-face')
+    return done(centred(spec.w, spec.h, photoBox(mask, photoW, photoH), photoW, photoH), null)
+  }
+  if (kept.slice(1).some((f) => f.box.w * f.box.h >= 0.25 * face.box.w * face.box.h)) issues.add('faces')
+
+  const eyeY = (face.eyeR.y + face.eyeL.y) / 2
+  const eyeX = (face.eyeR.x + face.eyeL.x) / 2
+  const mouthY = (face.mouthR.y + face.mouthL.y) / 2
+  const chinY = mouthY + (mouthY - eyeY)
+  const crownY = crownRow(mask, photoW, photoH, face.box.x, face.box.x + face.box.w) ?? face.box.y
+  if (crownY <= 0.01 * photoH) issues.add('top-cut')
+  const headH = Math.max(1, chinY - crownY)
+
+  const k = spec.head / headH
+  let offX: number
+  let offY: number
+  if (size === '35x45') {
+    offY = 47 - crownY * k
+    offX = 206.5 - eyeX * k
+  } else {
+    offY = 228 - eyeY * k
+    offX = spec.w / 2 - eyeX * k
+    const crown = crownY * k + offY
+    if (crown < 18) offY += 18 - crown
+  }
+  if (k > 1.5) issues.add('small')
+  if (photoH * k + offY < spec.h - 1) issues.add('shoulders-cut')
+  const tilt = Math.atan2(face.eyeL.y - face.eyeR.y, face.eyeL.x - face.eyeR.x)
+  if (Math.abs(tilt) > (5 * Math.PI) / 180) issues.add('tilted')
+
+  // The canvas mapped back into photo pixels, clipped to the photo; the destination follows.
+  const sx = Math.max(0, -offX / k)
+  const sy = Math.max(0, -offY / k)
+  const ex = Math.min(photoW, (spec.w - offX) / k)
+  const ey = Math.min(photoH, (spec.h - offY) / k)
+  const sw = Math.max(0, ex - sx)
+  const sh = Math.max(0, ey - sy)
+  const layout: Layout = {
+    outW: spec.w,
+    outH: spec.h,
+    sx,
+    sy,
+    sw,
+    sh,
+    dx: sx * k + offX,
+    dy: sy * k + offY,
+    dw: sw * k,
+    dh: sh * k,
+  }
+  return done(layout, { crown: (crownY * k + offY) / spec.h, chin: (chinY * k + offY) / spec.h })
+}
+
 /** The pixel size of the exported image for a framing. */
-export function frameSize(frame: Frame, original: ImageBitmap, mask: Mask): { width: number; height: number } {
+export function frameSize(
+  frame: Frame,
+  original: ImageBitmap,
+  mask: Mask,
+  passport?: Passport,
+): { width: number; height: number } {
+  if (frame === 'passport' && passport) {
+    if (passport.sheet) return { width: SHEET_W, height: SHEET_H }
+    return { width: PASSPORT[passport.size].w, height: PASSPORT[passport.size].h }
+  }
   if (frame === 'photo') return { width: original.width, height: original.height }
   const l = layout(frame, photoBox(mask, original.width, original.height), original.width, original.height)
   return { width: l.outW, height: l.outH }
@@ -279,6 +422,8 @@ export async function exportImage(
   shadow: Shadow = NO_SHADOW,
   /** Photo frame only: render with the long edge at most this many pixels (never upscaled). */
   maxSide?: number,
+  /** Passport frame only: the size, sheet option and detected faces. */
+  passport?: Passport,
 ): Promise<Blob> {
   // JPG has no transparency: without a picked background it gets white rather than black.
   const background = fill ?? (format === 'jpg' ? '#ffffff' : undefined)
@@ -299,6 +444,8 @@ export async function exportImage(
     } else {
       canvas = cutout(original, mask, background, colors, images, shadow)
     }
+  } else if (frame === 'passport' && passport) {
+    canvas = renderPassport(original, mask, fill ?? null, colors, passport)
   } else {
     const box = photoBox(mask, original.width, original.height)
     const l = layout(frame, box, original.width, original.height)
@@ -322,7 +469,7 @@ export async function exportImage(
     subject.width = subject.height = 0
   }
   const out = canvas
-  return new Promise((resolve, reject) =>
+  const blob = await new Promise<Blob>((resolve, reject) =>
     out.toBlob(
       (b) => {
         out.width = out.height = 0
@@ -333,6 +480,103 @@ export async function exportImage(
       QUALITY[format],
     ),
   )
+  if (frame !== 'passport' || !passport) return blob
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  const patched = format === 'png' ? withPngDpi(bytes) : format === 'jpg' ? withJfifDpi(bytes) : bytes
+  return patched === bytes ? blob : new Blob([patched as Uint8Array<ArrayBuffer>], { type: MIME[format] })
+}
+
+/** The passport photo (and the print sheet when asked) drawn on a canvas, white or light background, no shadow. */
+function renderPassport(
+  original: ImageBitmap,
+  mask: Mask,
+  fill: string | null,
+  colors: Uint8ClampedArray | undefined,
+  passport: Passport,
+): HTMLCanvasElement {
+  const { layout: l } = passportFit(passport.faces, mask, original.width, original.height, passport.size, fill)
+  const subject = cutout(original, mask, undefined, colors)
+  const photo = document.createElement('canvas')
+  photo.width = l.outW
+  photo.height = l.outH
+  const c = photo.getContext('2d')!
+  paintBackground(c, passportBackground(fill).color, l.outW, l.outH, { original })
+  c.imageSmoothingQuality = 'high'
+  if (l.sw > 0 && l.sh > 0) c.drawImage(subject, l.sx, l.sy, l.sw, l.sh, l.dx, l.dy, l.dw, l.dh)
+  subject.width = subject.height = 0
+  if (!passport.sheet) return photo
+
+  const { cols, rows, w, h } = sheetGrid(passport.size)
+  const sheet = document.createElement('canvas')
+  sheet.width = SHEET_W
+  sheet.height = SHEET_H
+  const s = sheet.getContext('2d')!
+  s.fillStyle = '#ffffff'
+  s.fillRect(0, 0, SHEET_W, SHEET_H)
+  const x0 = Math.round((SHEET_W - (cols * w + (cols - 1) * SHEET_GAP)) / 2)
+  const y0 = Math.round((SHEET_H - (rows * h + (rows - 1) * SHEET_GAP)) / 2)
+  s.strokeStyle = CUT_LINE
+  s.lineWidth = 1
+  for (let r = 0; r < rows; r++) {
+    for (let col = 0; col < cols; col++) {
+      const x = x0 + col * (w + SHEET_GAP)
+      const y = y0 + r * (h + SHEET_GAP)
+      s.drawImage(photo, x, y)
+      s.strokeRect(x - 0.5, y - 0.5, w + 1, h + 1)
+    }
+  }
+  photo.width = photo.height = 0
+  return sheet
+}
+
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    t[n] = c >>> 0
+  }
+  return t
+})()
+
+function crc32(bytes: Uint8Array): number {
+  let c = 0xffffffff
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8)
+  return (c ^ 0xffffffff) >>> 0
+}
+
+/** A PNG with a pHYs chunk (300 dpi) right after IHDR; the input when it isn't a PNG with an IHDR first. */
+export function withPngDpi(png: Uint8Array): Uint8Array {
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10]
+  const at = 33 // 8 signature + 25 IHDR chunk
+  if (png.length < at || sig.some((b, i) => png[i] !== b)) return png
+  if (String.fromCharCode(png[12], png[13], png[14], png[15]) !== 'IHDR') return png
+  const chunk = new Uint8Array(21)
+  const v = new DataView(chunk.buffer)
+  v.setUint32(0, 9)
+  chunk.set([0x70, 0x48, 0x59, 0x73], 4) // pHYs
+  v.setUint32(8, PPM_300)
+  v.setUint32(12, PPM_300)
+  chunk[16] = 1
+  v.setUint32(17, crc32(chunk.subarray(4, 17)))
+  const out = new Uint8Array(png.length + chunk.length)
+  out.set(png.subarray(0, at))
+  out.set(chunk, at)
+  out.set(png.subarray(at), at + chunk.length)
+  return out
+}
+
+/** A JPEG whose JFIF header says 300 dpi; left alone when there is no JFIF APP0 right after SOI. */
+export function withJfifDpi(jpg: Uint8Array): Uint8Array {
+  if (jpg.length < 18 || jpg[0] !== 0xff || jpg[1] !== 0xd8) return jpg
+  if (![0x4a, 0x46, 0x49, 0x46, 0].every((b, i) => jpg[6 + i] === b)) return jpg
+  const out = jpg.slice()
+  out[13] = 1
+  out[14] = 300 >> 8
+  out[15] = 300 & 0xff
+  out[16] = 300 >> 8
+  out[17] = 300 & 0xff
+  return out
 }
 
 /** WhatsApp sticker rules: 512 px square, 16 px margin, at most 100 KB. */

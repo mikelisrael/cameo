@@ -69,6 +69,21 @@ export type DraftOut =
   | { type: 'draft'; id: string; mask: Mask; ms: number } // mask is 320x320, 0..255
   | { type: 'error'; id?: string; message: string }
 
+/** Face finding for the passport preset: YuNet in a lazy worker. Coordinates are in the pixels of the `image` sent. */
+export type Point = { x: number; y: number }
+export type Face = {
+  score: number
+  box: { x: number; y: number; w: number; h: number }
+  eyeR: Point
+  eyeL: Point
+  nose: Point
+  mouthR: Point
+  mouthL: Point
+}
+export type FaceIn = { type: 'faces'; id: string; image: ImageBitmap }
+export type FaceOut =
+  { type: 'faces'; id: string; faces: Face[]; ms: number } | { type: 'error'; id?: string; message: string }
+
 export type Seg = { x: number; y: number; w: number; h: number; alpha: Uint8ClampedArray } // rect in mask px; alpha is w*h, 0..255
 export type SegIn =
   | { type: 'load' }

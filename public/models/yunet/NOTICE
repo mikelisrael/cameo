@@ -1,0 +1,1 @@
+YuNet face detector ONNX model (face_detection_yunet_2023mar.onnx) from the OpenCV Model Zoo, https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet, by Wei Wu and Shiqi Yu (https://github.com/ShiqiYu/libfacedetection). Licensed under MIT, see LICENSE.

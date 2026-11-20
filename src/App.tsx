@@ -1,4 +1,14 @@
-import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import { Appearance } from './components/Appearance'
 import { Compare } from './components/Compare'
 import { EditBar } from './components/EditBar'
@@ -17,17 +27,21 @@ import {
   exportImage,
   exportSticker,
   frameSize,
+  passportFit,
   shadowKey,
   stickerName,
   supportsWebp,
   zipCutouts,
   type Format,
   type Frame,
+  type Passport,
+  type PassportSize,
   type Shadow,
 } from './lib/compose'
 import { ACCEPT_ATTR, decodeImage } from './lib/decode'
 import { isDirty, newHistory, push, redo, undo, type History } from './lib/history'
-import type { Mask } from './lib/protocol'
+import type { Face, Mask } from './lib/protocol'
+import { useFaceFinder } from './lib/useFaceFinder'
 import { useHowItWorks } from './lib/useHowItWorks'
 import { useRemover, type Result, type Status } from './lib/useRemover'
 import { useSegmenter } from './lib/useSegmenter'
@@ -116,6 +130,8 @@ export default function App() {
   // Not remembered between visits.
   const [format, setFormat] = useState<Format>('png')
   const [frame, setFrame] = useState<Frame>('photo')
+  const [passportSize, setPassportSize] = useState<PassportSize>('35x45')
+  const [passportSheet, setPassportSheet] = useState(false)
   const [shadow, setShadow] = useState<Shadow>(NO_SHADOW)
   const shadowId = shadowKey(shadow)
   const [webp, setWebp] = useState(false)
@@ -147,6 +163,7 @@ export default function App() {
     version: number
     format: Format
     frame: Frame
+    passport: string
     shadow: string
     url: string
     blob: Blob
@@ -162,6 +179,12 @@ export default function App() {
   const seg = useSegmenter()
   const segRef = useRef(seg)
   segRef.current = seg
+  const faceFinder = useFaceFinder()
+  const faceRef = useRef(faceFinder)
+  faceRef.current = faceFinder
+  // The faces found in the selected photo, once the ID size is picked. `retry` re-asks after a failure.
+  const [faceState, setFaceState] = useState<{ id: string; list: Face[] | null; failed: boolean } | null>(null)
+  const [faceTry, setFaceTry] = useState(0)
   const [pick, setPick] = useState<'keep' | 'remove'>('keep')
   const [tapPoint, setTapPoint] = useState<{ x: number; y: number } | null>(null)
   // Bumped on every mask change (strokes, undo, redo, reset): the cut-out is rebuilt from it.
@@ -323,6 +346,7 @@ export default function App() {
     if (blurUrl) URL.revokeObjectURL(blurUrl)
     blurUrls.current.delete(id)
     segRef.current.drop(id)
+    faceRef.current.forget(id)
     releaseLook(id)
   }
 
@@ -373,6 +397,7 @@ export default function App() {
     setFramed(null)
     setSticker(null)
     setFill(null)
+    setFaceState(null)
     setView('compare')
   }, [clearImages])
 
@@ -481,6 +506,31 @@ export default function App() {
     [after],
   )
 
+  // Face finding starts only when the ID size is picked: the worker is lazy.
+  useEffect(() => {
+    const id = selected
+    const r = id ? entries.current.get(id)?.result : undefined
+    if (!id || !r || frame !== 'passport') return
+    let cancelled = false
+    setFaceState((cur) => (cur?.id === id && cur.list ? cur : { id, list: null, failed: false }))
+    faceRef.current
+      .find(id, r.original)
+      .then((list) => {
+        if (!cancelled) setFaceState({ id, list, failed: false })
+      })
+      .catch(() => {
+        if (!cancelled) setFaceState({ id, list: null, failed: true })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selected, selectedDone, frame, faceTry])
+  const faces = faceState && faceState.id === selected ? faceState : null
+  const passport: Passport | undefined =
+    frame === 'passport' ? { size: passportSize, sheet: passportSheet, faces: faces?.list ?? null } : undefined
+  // What the framed render depends on beyond `frame`: a change here re-renders it.
+  const passportId = passport ? `${passport.size}:${passport.sheet}:${passport.faces ? 'faces' : 'none'}` : ''
+
   // The chosen size, rendered ahead like `after`. Photo needs none: `after` is the whole photo.
   useEffect(() => {
     const id = selected
@@ -495,16 +545,28 @@ export default function App() {
     const version = editVersion
     const mask = e.edited ?? r.mask
     const timer = setTimeout(() => {
-      exportImage(r.original, mask, fill ?? undefined, r.colors, format, frame, images.current, shadow)
+      exportImage(
+        r.original,
+        mask,
+        fill ?? undefined,
+        r.colors,
+        format,
+        frame,
+        images.current,
+        shadow,
+        undefined,
+        passport,
+      )
         .then((blob) => {
           if (cancelled) return
-          const { width, height } = frameSize(frame, r.original, mask)
+          const { width, height } = frameSize(frame, r.original, mask, passport)
           setFramed({
             id,
             fill,
             version,
             format,
             frame,
+            passport: passportId,
             shadow: shadowId,
             url: URL.createObjectURL(blob),
             blob,
@@ -520,7 +582,7 @@ export default function App() {
     }
     // `shadow` is covered by its key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, selectedDone, fill, editVersion, view, format, frame, shadowId])
+  }, [selected, selectedDone, fill, editVersion, view, format, frame, shadowId, passportId])
 
   useEffect(
     () => () => {
@@ -600,8 +662,12 @@ export default function App() {
     const name = downloadName(e.file.name, format)
     // The pre-rendered image counts only once it has the background and format picked now (a
     // swatch tap or format change re-renders it, which takes a moment on a large photo).
-    const ready =
-      frame === 'photo'
+    // In ID mode the face may still be being found: the framed render is then the no-face
+    // centring, so it is not ready, and the export below waits for the face.
+    const facePending = frame === 'passport' && !!passport && !passport.faces && !faces?.failed
+    const ready = facePending
+      ? null
+      : frame === 'photo'
         ? full &&
           full.id === selected &&
           full.fill === fill &&
@@ -616,6 +682,7 @@ export default function App() {
             framed.version === editVersion &&
             framed.format === format &&
             framed.frame === frame &&
+            framed.passport === passportId &&
             framed.shadow === shadowId
           ? framed.blob
           : null
@@ -628,6 +695,10 @@ export default function App() {
         // Anything else (not allowed, unsupported): fall back to a download.
       }
     }
+    const exportPassport: Passport | undefined =
+      facePending && passport
+        ? { ...passport, faces: await faceRef.current.find(selected!, e.result.original).catch(() => null) }
+        : passport
     const blob =
       ready ??
       (await exportImage(
@@ -639,13 +710,15 @@ export default function App() {
         frame,
         images.current,
         shadow,
+        undefined,
+        exportPassport,
       ))
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = name
     a.click()
     setTimeout(() => URL.revokeObjectURL(a.href), 1000)
-  }, [selected, fill, full, framed, editVersion, format, frame, shadow, shadowId])
+  }, [selected, fill, full, framed, editVersion, format, frame, shadow, shadowId, passport, passportId, faces])
 
   const saveSticker = useCallback(async () => {
     const e = selected ? entries.current.get(selected) : undefined
@@ -685,6 +758,15 @@ export default function App() {
       for (const item of items) {
         const e = item.state === 'done' ? entries.current.get(item.id) : undefined
         if (!e?.result) continue
+        // Each photo has its own face; one that can't be found is framed without it.
+        const zipPassport: Passport | undefined =
+          frame === 'passport'
+            ? {
+                size: passportSize,
+                sheet: passportSheet,
+                faces: await faceRef.current.find(item.id, e.result.original).catch(() => null),
+              }
+            : undefined
         const blob = await exportImage(
           e.result.original,
           e.edited ?? e.result.mask,
@@ -694,6 +776,8 @@ export default function App() {
           frame,
           images.current,
           shadow,
+          undefined,
+          zipPassport,
         )
         files.push({ name: downloadName(e.file.name, format), blob })
       }
@@ -708,7 +792,7 @@ export default function App() {
     } finally {
       setZipping(false)
     }
-  }, [zipping, items, fill, format, frame, shadow])
+  }, [zipping, items, fill, format, frame, shadow, passportSize, passportSheet])
 
   const current = selected ? entries.current.get(selected) : undefined
   const hasResult = !!current?.result
@@ -994,10 +1078,19 @@ export default function App() {
     framed.version === editVersion &&
     framed.format === format &&
     framed.frame === frame &&
+    framed.passport === passportId &&
     framed.shadow === shadowId
   const photoSize = current?.result
     ? { width: current.result.original.width, height: current.result.original.height }
     : null
+  const faceList = faces?.list ?? null
+  const fit = useMemo(() => {
+    const r = current?.result
+    if (frame !== 'passport' || !r) return null
+    return passportFit(faceList, current.edited ?? r.mask, r.original.width, r.original.height, passportSize, fill)
+    // `current.edited` changes with `editVersion`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frame, current, faceList, passportSize, fill, editVersion])
 
   const pending =
     (selectedItem?.state === 'processing' || selectedItem?.state === 'queued' ? selectedItem : undefined) ??
@@ -1281,6 +1374,20 @@ export default function App() {
                 onFormat={setFormat}
                 frame={frame}
                 onFrame={setFrame}
+                passport={
+                  fit && {
+                    size: passportSize,
+                    sheet: passportSheet,
+                    issues: fit.issues,
+                    guides: fit.guides,
+                    sheetCount: fit.sheetCount,
+                    finding: !faces || (!faces.list && !faces.failed),
+                    failed: !!faces?.failed,
+                  }
+                }
+                onPassportSize={setPassportSize}
+                onPassportSheet={setPassportSheet}
+                onPassportRetry={() => setFaceTry((n) => n + 1)}
                 shadow={shadow}
                 onShadow={setShadow}
                 preview={framedReady ? framed.url : null}

@@ -9,7 +9,7 @@ import {
   isImage,
   type GradientName,
 } from '../lib/background'
-import type { Format, Frame, Shadow } from '../lib/compose'
+import type { Format, Frame, PassportIssue, PassportSize, Shadow } from '../lib/compose'
 import type { Diagnostics, Timings } from '../lib/protocol'
 import type { Item } from './Queue'
 import { CheckIcon, ChevronDownIcon, PlusIcon, DownloadIcon, InfoIcon, LockIcon, ShareIcon, Spinner } from './icons'
@@ -23,7 +23,28 @@ const SIZES: { value: Frame; label: string }[] = [
   { value: 'square', label: '1:1' },
   { value: 'portrait', label: '4:5' },
   { value: 'story', label: '9:16' },
+  { value: 'passport', label: 'ID' },
 ]
+
+const PASSPORT_SIZES: { value: PassportSize; label: string }[] = [
+  { value: '35x45', label: '35×45 mm' },
+  { value: '2x2', label: '2×2 in' },
+]
+
+const PASSPORT_PRINT: { value: 'one' | 'sheet'; label: string }[] = [
+  { value: 'one', label: 'One photo' },
+  { value: 'sheet', label: 'Print sheet' },
+]
+
+const PASSPORT_NOTE: Record<PassportIssue, string> = {
+  'no-face': 'No face found. Use a photo looking straight at the camera.',
+  faces: 'More than one face. Use a photo of one person.',
+  'top-cut': 'The top of the head is cut off. Use a photo with room above the head.',
+  'shoulders-cut': 'The shoulders are cut off. Use a photo that shows them.',
+  tilted: 'The head is tilted. Keep it level for a passport photo.',
+  background: 'Passport photos need a plain light background, so this one is on white.',
+  small: 'This photo is small, so the print may look soft.',
+}
 
 const SHADOWS: { value: Shadow['kind']; label: string }[] = [
   { value: 'none', label: 'None' },
@@ -37,6 +58,7 @@ const FRAME_NOTE: Record<Frame, string> = {
   square: 'Square, for shops and marketplaces',
   portrait: 'Instagram post',
   story: 'Story or WhatsApp status',
+  passport: 'Passport or ID photo',
 }
 
 /** Backgrounds offered for the cut-out; `null` is transparent. These are content, not chrome. */
@@ -70,6 +92,20 @@ type Props = {
   onDownload: () => void
   frame: Frame
   onFrame: (frame: Frame) => void
+  /** The ID size's options and what the photo needs; set only while the ID size is picked. */
+  passport?: {
+    size: PassportSize
+    sheet: boolean
+    issues: PassportIssue[]
+    /** Crown and chin as fractions of the single photo's height; null when no face is known. */
+    guides: { crown: number; chin: number } | null
+    sheetCount: number
+    finding: boolean
+    failed: boolean
+  } | null
+  onPassportSize: (size: PassportSize) => void
+  onPassportSheet: (sheet: boolean) => void
+  onPassportRetry: () => void
   shadow: Shadow
   onShadow: (shadow: Shadow) => void
   /** Object URL of the framed image when it is ready; null while it renders. */
@@ -115,6 +151,10 @@ export function Toolbar({
   onDownload,
   frame,
   onFrame,
+  passport,
+  onPassportSize,
+  onPassportSheet,
+  onPassportRetry,
   shadow,
   onShadow,
   preview,
@@ -148,7 +188,7 @@ export function Toolbar({
   }
   const gradient = gradientOf(fill ?? '')
   const backgroundNote = !fill
-    ? format === 'jpg'
+    ? format === 'jpg' || frame === 'passport'
       ? 'White background'
       : 'Transparent background'
     : fill === BLUR
@@ -278,36 +318,127 @@ export function Toolbar({
           Size
         </h2>
         <Segmented className="seg seg--block" label="Size" options={SIZES} value={frame} onChange={onFrame} />
+        {passport && (
+          <>
+            <Segmented
+              className="seg seg--block"
+              label="Passport size"
+              options={PASSPORT_SIZES}
+              value={passport.size}
+              onChange={onPassportSize}
+            />
+            <Segmented
+              className="seg seg--block"
+              label="Print"
+              options={PASSPORT_PRINT}
+              value={passport.sheet ? 'sheet' : 'one'}
+              onChange={(v) => onPassportSheet(v === 'sheet')}
+            />
+          </>
+        )}
         <p className="panel__meta">
-          {FRAME_NOTE[frame]}
-          {outSize && (
+          {passport ? (
+            passport.finding ? (
+              'Finding the face…'
+            ) : passport.sheet ? (
+              <>
+                <span className="mono">10 × 15</span> cm sheet {' · '}
+                <span className="mono">{passport.sheetCount}</span> {passport.sheetCount === 1 ? 'photo' : 'photos'}
+              </>
+            ) : passport.size === '35x45' ? (
+              <>
+                <span className="mono">35 × 45</span> mm {' · '}
+                <span className="nowrap">
+                  <span className="mono">413 × 531</span> px at 300 dpi
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="mono">2 × 2</span> in {' · '}
+                <span className="nowrap">
+                  <span className="mono">600 × 600</span> px at 300 dpi
+                </span>
+              </>
+            )
+          ) : (
             <>
-              {' · '}
-              <span className="nowrap">
-                <span className="mono">
-                  {outSize.width} × {outSize.height}
-                </span>{' '}
-                px
-              </span>
+              {FRAME_NOTE[frame]}
+              {outSize && (
+                <>
+                  {' · '}
+                  <span className="nowrap">
+                    <span className="mono">
+                      {outSize.width} × {outSize.height}
+                    </span>{' '}
+                    px
+                  </span>
+                </>
+              )}
             </>
           )}
         </p>
+        {passport && (
+          <>
+            <p className="panel__meta">
+              {passport.size === '35x45'
+                ? 'The size most countries use. Check yours.'
+                : 'The US passport and visa size.'}
+            </p>
+            {passport.failed ? (
+              <p className="panel__notice">
+                <InfoIcon width={15} height={15} />
+                <span>Couldn't load the face finder.</span>
+                <button type="button" className="button button--quiet button--sm" onClick={onPassportRetry}>
+                  Try again
+                </button>
+              </p>
+            ) : (
+              passport.issues.slice(0, 2).map((issue) => (
+                <p key={issue} className="panel__notice">
+                  <InfoIcon width={15} height={15} />
+                  <span>{PASSPORT_NOTE[issue]}</span>
+                </p>
+              ))
+            )}
+          </>
+        )}
         {frame !== 'photo' && (
           <div className="panel__preview">
-            {preview ? <img src={preview} alt="What you'll download" draggable={false} /> : <Spinner />}
+            {preview ? (
+              passport && !passport.sheet && passport.guides ? (
+                <span className="panel__frame">
+                  <img src={preview} alt="What you'll download" draggable={false} />
+                  <span
+                    className="panel__guide"
+                    style={{ top: `${passport.guides.crown * 100}%` }}
+                    aria-hidden="true"
+                  />
+                  <span className="panel__guide" style={{ top: `${passport.guides.chin * 100}%` }} aria-hidden="true" />
+                </span>
+              ) : (
+                <img src={preview} alt="What you'll download" draggable={false} />
+              )
+            ) : (
+              <Spinner />
+            )}
           </div>
         )}
-        <h2 className="panel__title" id="shadow-label">
-          Shadow
-        </h2>
-        <Segmented
-          className="seg seg--block"
-          label="Shadow"
-          options={SHADOWS}
-          value={shadow.kind}
-          onChange={(kind) => onShadow({ ...shadow, kind })}
-        />
-        {shadow.kind !== 'none' && (
+        {/* A passport photo has no shadow, so the choice isn't offered there. */}
+        {frame !== 'passport' && (
+          <>
+            <h2 className="panel__title" id="shadow-label">
+              Shadow
+            </h2>
+            <Segmented
+              className="seg seg--block"
+              label="Shadow"
+              options={SHADOWS}
+              value={shadow.kind}
+              onChange={(kind) => onShadow({ ...shadow, kind })}
+            />
+          </>
+        )}
+        {frame !== 'passport' && shadow.kind !== 'none' && (
           <div className="panel__sliders">
             <label className="editbar__slider">
               <span>Strength</span>
