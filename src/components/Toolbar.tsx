@@ -11,6 +11,7 @@ import {
 } from '../lib/background'
 import type { Format, Frame, Match, PassportIssue, PassportSize, Shadow } from '../lib/compose'
 import type { Diagnostics, Timings } from '../lib/protocol'
+import { UPSCALE_MB } from '../lib/upscale'
 import type { Item } from './Queue'
 import { CheckIcon, ChevronDownIcon, PlusIcon, DownloadIcon, InfoIcon, LockIcon, ShareIcon, Spinner } from './icons'
 import { Segmented } from './Segmented'
@@ -139,6 +140,133 @@ type Props = {
   onSticker: () => void
   /** Opens the keyboard-shortcuts cheat sheet. */
   onShortcuts: () => void
+  /** The 2x upscale offer for the selected photo; null when none is selected. */
+  upscale: {
+    offer: boolean
+    from: { width: number; height: number }
+    to: { width: number; height: number }
+    state: 'idle' | 'downloading' | 'running' | 'error'
+    progress: number
+    tiles: { done: number; total: number } | null
+    /** Another photo is being upscaled. */
+    elsewhere: boolean
+    failed: boolean
+    upscaledFrom: { width: number; height: number } | null
+    canUndo: boolean
+  } | null
+  onUpscale: () => void
+  onUpscaleRetry: () => void
+  onUpscaleUndo: () => void
+}
+
+function UpscaleBar({ label, value }: { label: string; value: number }) {
+  return (
+    <span
+      className="bar"
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(value * 100)}
+    >
+      <span className="bar__fill" style={{ transform: `scaleX(${Math.max(0.02, value)})` }} />
+    </span>
+  )
+}
+
+function UpscaleBlock({
+  u,
+  onUpscale,
+  onRetry,
+  onUndo,
+}: {
+  u: NonNullable<Props['upscale']>
+  onUpscale: () => void
+  onRetry: () => void
+  onUndo: () => void
+}) {
+  const working = u.state === 'downloading' || u.state === 'running'
+  const notice = (text: string, retry?: boolean) => (
+    <p className="panel__notice">
+      <InfoIcon width={15} height={15} />
+      <span>{text}</span>
+      {retry && (
+        <button type="button" className="button button--quiet button--sm" onClick={onRetry}>
+          Try again
+        </button>
+      )}
+    </p>
+  )
+  if (u.offer && u.failed && !working) return notice("Couldn't upscale this photo.", true)
+  return (
+    <>
+      {u.offer && (
+        <>
+          <div className="panel__upscale">
+            <div className="panel__upscale-text">
+              {u.state === 'downloading' ? (
+                // A cached model sends no download progress: then it is only starting, not downloading.
+                <p>{u.progress > 0 && u.progress < 1 ? 'Setting up · one-time download' : 'Starting the upscaler…'}</p>
+              ) : u.state === 'running' ? (
+                <p>
+                  Upscaling…
+                  {u.tiles && (
+                    <>
+                      {' '}
+                      <span className="mono">{u.tiles.done}</span> of <span className="mono">{u.tiles.total}</span>
+                    </>
+                  )}
+                </p>
+              ) : (
+                <>
+                  <p>Make it 2× bigger and sharper.</p>
+                  <p className="panel__meta">
+                    <span className="mono nowrap">
+                      {u.to.width} × {u.to.height}
+                    </span>{' '}
+                    px ·{' '}
+                    <span className="nowrap">
+                      one-time <span className="mono">{UPSCALE_MB}</span> MB download
+                    </span>
+                  </p>
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              className="button button--quiet button--sm panel__upscale-btn"
+              onClick={onUpscale}
+              disabled={working || u.elsewhere}
+            >
+              Upscale
+              {working && <Spinner />}
+            </button>
+          </div>
+          {u.state === 'downloading' && <UpscaleBar label="Downloading the upscaler" value={u.progress} />}
+          {u.state === 'running' && (
+            <UpscaleBar label="Upscaling" value={u.tiles ? u.tiles.done / Math.max(1, u.tiles.total) : 0} />
+          )}
+          {u.elsewhere && notice("Another photo is upscaling. This one can go when it's done.")}
+        </>
+      )}
+      {u.upscaledFrom && !working && (
+        <div className="panel__upscale">
+          <p className="panel__meta panel__upscale-text">
+            Upscaled from{' '}
+            <span className="mono nowrap">
+              {u.upscaledFrom.width} × {u.upscaledFrom.height}
+            </span>{' '}
+            px.
+          </p>
+          {u.canUndo && (
+            <button type="button" className="button button--quiet button--sm panel__upscale-btn" onClick={onUndo}>
+              Undo
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  )
 }
 
 export function Toolbar({
@@ -179,6 +307,10 @@ export function Toolbar({
   zipping,
   onSticker,
   onShortcuts,
+  upscale,
+  onUpscale,
+  onUpscaleRetry,
+  onUpscaleUndo,
 }: Props) {
   // Anything that isn't a hex colour outside the presets is a preset-like choice, not the custom colour.
   const isPreset = PRESETS.some((p) => p.value === fill) || (!!fill && !isColor(fill)) || fill === null
@@ -381,6 +513,7 @@ export function Toolbar({
             </>
           )}
         </p>
+        {upscale && <UpscaleBlock u={upscale} onUpscale={onUpscale} onRetry={onUpscaleRetry} onUndo={onUpscaleUndo} />}
         {passport && (
           <>
             <p className="panel__meta">
