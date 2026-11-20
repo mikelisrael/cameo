@@ -21,12 +21,14 @@ import { Toolbar } from './components/Toolbar'
 import { paintBackground } from './lib/background'
 import { applyPatch, applyPick, type MaskPatch } from './lib/maskPatch'
 import {
+  NO_MATCH,
   NO_SHADOW,
   downloadName,
   draftPreview,
   exportImage,
   exportSticker,
   frameSize,
+  matchKey,
   passportFit,
   shadowKey,
   stickerName,
@@ -34,6 +36,7 @@ import {
   zipCutouts,
   type Format,
   type Frame,
+  type Match,
   type Passport,
   type PassportSize,
   type Shadow,
@@ -134,6 +137,8 @@ export default function App() {
   const [passportSheet, setPassportSheet] = useState(false)
   const [shadow, setShadow] = useState<Shadow>(NO_SHADOW)
   const shadowId = shadowKey(shadow)
+  const [match, setMatch] = useState<Match>(NO_MATCH)
+  const matchId = matchKey(match)
   const [webp, setWebp] = useState(false)
   const [zipping, setZipping] = useState(false)
   // The selected cut-out, rendered at full size with the chosen background: shown on stage and
@@ -144,6 +149,7 @@ export default function App() {
     version: number
     format: Format
     shadow: string
+    match: string
     url: string
   } | null>(null)
   // The same render at full size, filled in after `after`: this is what Save and share use.
@@ -153,6 +159,7 @@ export default function App() {
     version: number
     format: Format
     shadow: string
+    match: string
     blob: Blob
   } | null>(null)
   const lastRun = useRef<{ view: View; selected: string | null; done: boolean } | null>(null)
@@ -165,6 +172,7 @@ export default function App() {
     frame: Frame
     passport: string
     shadow: string
+    match: string
     url: string
     blob: Blob
     width: number
@@ -467,11 +475,13 @@ export default function App() {
           images.current,
           shadow,
           DISPLAY_SIDE,
+          undefined,
+          match,
         )
           .then((shown) => {
             // A superseded run never makes a URL, so there is nothing to revoke for it.
             if (cancelled) return
-            setAfter({ id, fill, version, format, shadow: shadowId, url: URL.createObjectURL(shown) })
+            setAfter({ id, fill, version, format, shadow: shadowId, match: matchId, url: URL.createObjectURL(shown) })
             return exportImage(
               r.original,
               mask,
@@ -481,8 +491,11 @@ export default function App() {
               'photo',
               images.current,
               shadow,
+              undefined,
+              undefined,
+              match,
             ).then((blob) => {
-              if (!cancelled) setFull({ id, fill, version, format, shadow: shadowId, blob })
+              if (!cancelled) setFull({ id, fill, version, format, shadow: shadowId, match: matchId, blob })
             })
           })
           .catch(() => {})
@@ -493,9 +506,9 @@ export default function App() {
       cancelled = true
       clearTimeout(timer)
     }
-    // `shadow` is covered by its key.
+    // `shadow` and `match` are covered by their keys.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, selectedDone, fill, editVersion, view, format, shadowId])
+  }, [selected, selectedDone, fill, editVersion, view, format, shadowId, matchId])
 
   // The displayed URL stays valid until a newer one has replaced it (or it is cleared, or the app
   // unmounts): this cleanup runs after the replacement has committed.
@@ -556,6 +569,7 @@ export default function App() {
         shadow,
         undefined,
         passport,
+        match,
       )
         .then((blob) => {
           if (cancelled) return
@@ -568,6 +582,7 @@ export default function App() {
             frame,
             passport: passportId,
             shadow: shadowId,
+            match: matchId,
             url: URL.createObjectURL(blob),
             blob,
             width,
@@ -580,9 +595,9 @@ export default function App() {
       cancelled = true
       clearTimeout(timer)
     }
-    // `shadow` is covered by its key.
+    // `shadow` and `match` are covered by their keys.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, selectedDone, fill, editVersion, view, format, frame, shadowId, passportId])
+  }, [selected, selectedDone, fill, editVersion, view, format, frame, shadowId, matchId, passportId])
 
   useEffect(
     () => () => {
@@ -673,7 +688,8 @@ export default function App() {
           full.fill === fill &&
           full.version === editVersion &&
           full.format === format &&
-          full.shadow === shadowId
+          full.shadow === shadowId &&
+          full.match === matchId
           ? full.blob
           : null
         : framed &&
@@ -683,7 +699,8 @@ export default function App() {
             framed.format === format &&
             framed.frame === frame &&
             framed.passport === passportId &&
-            framed.shadow === shadowId
+            framed.shadow === shadowId &&
+            framed.match === matchId
           ? framed.blob
           : null
     if (shareFiles && ready) {
@@ -712,13 +729,29 @@ export default function App() {
         shadow,
         undefined,
         exportPassport,
+        match,
       ))
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = name
     a.click()
     setTimeout(() => URL.revokeObjectURL(a.href), 1000)
-  }, [selected, fill, full, framed, editVersion, format, frame, shadow, shadowId, passport, passportId, faces])
+  }, [
+    selected,
+    fill,
+    full,
+    framed,
+    editVersion,
+    format,
+    frame,
+    shadow,
+    shadowId,
+    match,
+    matchId,
+    passport,
+    passportId,
+    faces,
+  ])
 
   const saveSticker = useCallback(async () => {
     const e = selected ? entries.current.get(selected) : undefined
@@ -778,6 +811,7 @@ export default function App() {
           shadow,
           undefined,
           zipPassport,
+          match,
         )
         files.push({ name: downloadName(e.file.name, format), blob })
       }
@@ -792,7 +826,7 @@ export default function App() {
     } finally {
       setZipping(false)
     }
-  }, [zipping, items, fill, format, frame, shadow, passportSize, passportSheet])
+  }, [zipping, items, fill, format, frame, shadow, match, passportSize, passportSheet])
 
   const current = selected ? entries.current.get(selected) : undefined
   const hasResult = !!current?.result
@@ -1079,7 +1113,8 @@ export default function App() {
     framed.format === format &&
     framed.frame === frame &&
     framed.passport === passportId &&
-    framed.shadow === shadowId
+    framed.shadow === shadowId &&
+    framed.match === matchId
   const photoSize = current?.result
     ? { width: current.result.original.width, height: current.result.original.height }
     : null
@@ -1390,6 +1425,8 @@ export default function App() {
                 onPassportRetry={() => setFaceTry((n) => n + 1)}
                 shadow={shadow}
                 onShadow={setShadow}
+                match={match}
+                onMatch={setMatch}
                 preview={framedReady ? framed.url : null}
                 outSize={
                   frame === 'photo' ? photoSize : framedReady ? { width: framed.width, height: framed.height } : null

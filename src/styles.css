@@ -2447,6 +2447,10 @@ kbd {
   height: 20px;
 }
 
+.switch__note {
+  color: var(--ink-3);
+}
+
 .editbar__slider {
   display: grid;
   grid-template-columns: auto 1fr auto;

@@ -9,7 +9,7 @@ import {
   isImage,
   type GradientName,
 } from '../lib/background'
-import type { Format, Frame, PassportIssue, PassportSize, Shadow } from '../lib/compose'
+import type { Format, Frame, Match, PassportIssue, PassportSize, Shadow } from '../lib/compose'
 import type { Diagnostics, Timings } from '../lib/protocol'
 import type { Item } from './Queue'
 import { CheckIcon, ChevronDownIcon, PlusIcon, DownloadIcon, InfoIcon, LockIcon, ShareIcon, Spinner } from './icons'
@@ -108,6 +108,8 @@ type Props = {
   onPassportRetry: () => void
   shadow: Shadow
   onShadow: (shadow: Shadow) => void
+  match: Match
+  onMatch: (match: Match) => void
   /** Object URL of the framed image when it is ready; null while it renders. */
   preview: string | null
   /** Pixel size of what will be downloaded; null while a framed size is still rendering. */
@@ -157,6 +159,8 @@ export function Toolbar({
   onPassportRetry,
   shadow,
   onShadow,
+  match,
+  onMatch,
   preview,
   outSize,
   diagnostics,
@@ -467,6 +471,49 @@ export function Toolbar({
               </label>
             )}
           </div>
+        )}
+        {frame !== 'passport' && (
+          <>
+            <h2 className="panel__title" id="match-label">
+              Light
+            </h2>
+            <label className="switch" data-disabled={fill === null || undefined}>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={match.on && fill !== null}
+                disabled={fill === null}
+                aria-describedby={fill === null ? 'match-why' : undefined}
+                onChange={(e) => onMatch({ ...match, on: e.target.checked })}
+              />
+              <span className="switch__track" aria-hidden="true" />
+              <span>
+                Match the background <span className="switch__note">(experimental)</span>
+              </span>
+            </label>
+            {fill === null && (
+              <p className="panel__notice" id="match-why">
+                <InfoIcon width={15} height={15} />
+                <span>Pick a background first. A clear one has no light to match.</span>
+              </p>
+            )}
+            {fill !== null && match.on && (
+              <div className="panel__sliders">
+                <label className="editbar__slider">
+                  <span>Strength</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={Math.round(match.strength * 100)}
+                    onChange={(e) => onMatch({ ...match, strength: Number(e.target.value) / 100 })}
+                  />
+                  <output className="editbar__val">{Math.round(match.strength * 100)} %</output>
+                </label>
+              </div>
+            )}
+          </>
         )}
         {/* On phones this becomes a bar pinned to the bottom of the screen, in thumb reach. */}
         <div className="panel__save">
