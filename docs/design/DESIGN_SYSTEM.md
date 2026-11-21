@@ -72,9 +72,9 @@ Loaded from Google Fonts in `index.html`. Nothing else.
 
 ## 6. Layout
 
-- Max width 1200px, 24px gutters (16px under 600px).
+- Max width 1440px, 24px gutters (16px under 600px).
 - Empty state: one centred sheet, at most 680px wide.
-- Workspace: the stage on the left (fills), a 288px panel on the right; under 900px the panel drops below the stage. The queue strip sits under the stage.
+- Workspace: the stage on the left (fills), a panel on the right that grows with the window, 288px to 360px (`clamp(288px, 27vw, 360px)`, Israel 21 Nov 2026: the panel was cramped); under 900px the panel drops below the stage. The queue strip sits under the stage.
 - The whole window takes a drop, on every screen (Israel, 18 Nov 2026, from Photoroom). While files are dragged over it, the veil floods the window with `--brand`: a dashed `--brand-ink` frame inset from the edges (the window becomes the drop sheet), the drop mark, "Drop your images" in Display and "They stay on this device." It is the one place the accent is a fill that carries words (§8); `--brand-ink` on `--brand` clears 5:1 in every accent.
 
 ## 7. Words
