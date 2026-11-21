@@ -34,7 +34,7 @@
 - **Finish.** Backgrounds: transparent, colours, gradients, a blurred copy of the photo or your own image. Contact and drop shadows. Match the subject's light to the background. Upscale small photos 2×.
 - **Save.** PNG, WebP or JPG, and a ZIP for a batch. Size presets for 1:1, 4:5 and 9:16, passport and ID photos, and a WhatsApp sticker. The share sheet on phones.
 - **Everywhere.** Works offline once set up and installs to your home screen. Light and dark themes with accent colours. Keyboard shortcuts (press `?`). Checked with a screen reader.
-- **Private by design.** The model runs on your device in a Web Worker. Your photos are never sent to a server; the only thing sent is an anonymous count of visits and cut-outs ([GoatCounter](https://www.goatcounter.com), no cookies).
+- **Private by design.** The model runs on your device in a Web Worker. Your photos are never sent to a server. The only thing Cameo is built to send is an anonymous count of visits and cut-outs ([GoatCounter](https://www.goatcounter.com), no cookies), and that stays off until a site code is set.
 
 ## How it works
 
@@ -48,11 +48,11 @@
 | GPU (WebGPU, fp16, else fp32) | [`onnx-community/BiRefNet_lite-ONNX`](https://huggingface.co/onnx-community/BiRefNet_lite-ONNX), 1024 px | the GPU can run it (checked with a warm-up pass) |
 | CPU (WebAssembly, fp32) | [`studioludens/birefnet-lite-512`](https://huggingface.co/studioludens/birefnet-lite-512), 512 px | no WebGPU, or the GPU can't run the larger model |
 
-Smaller models load only when their feature is first used: [U-2-Netp](https://github.com/xuebinqin/U-2-Net) for the first rough cut-out, SlimSAM for tap-to-select, MI-GAN for clean up, Swin2SR for upscaling and YuNet for framing ID photos.
-
 Both models are MIT-licensed. Cameo opens the GPU itself with the adapter's real limits (the model needs 17 storage buffers per shader stage, more than WebGPU's default), and tries fp16, then fp32. If the GPU still fails, it switches to the CPU path without reloading, remembers that for later visits, and offers "Try the graphics card again" under **About this device**. ONNX Runtime's WebAssembly files load from jsDelivr, so the site itself stays small.
 
 Photos are decoded on the device too: PNG, JPG, WebP and AVIF by the browser, iPhone photos (HEIC/HEIF) by the browser where it can (Safari) and otherwise by [heic-to](https://github.com/hoppergee/heic-to), loaded only when one arrives. Very large photos are scaled to a working size (16.7 MP on iPhone and iPad, 24 MP elsewhere) so the device doesn't run out of memory.
+
+Smaller models load only when their feature is first used: [U-2-Netp](https://github.com/xuebinqin/U-2-Net) for the first rough cut-out, SlimSAM for tap-to-select, MI-GAN for clean up, Swin2SR for upscaling and YuNet for framing ID photos.
 
 ## Run it locally
 
@@ -115,7 +115,7 @@ docs/
 
 ## Roadmap
 
-The phases to make Cameo state of the art (sharper edges on large photos, erase/restore brushes, shadows, size presets, stickers, offline support and more) are in [`docs/todo.md`](docs/todo.md).
+What has shipped is in the [changelog](CHANGELOG.md). What is still open (generated backgrounds, short video clips, more machines on the GPU path) and why some ideas were not built is in [`docs/todo.md`](docs/todo.md).
 
 ## Contributing
 
