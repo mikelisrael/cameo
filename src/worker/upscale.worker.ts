@@ -17,18 +17,37 @@ type Upscaler = (image: RawImage) => Promise<RawImage>
 let loading: Promise<Upscaler> | null = null
 let queue: Promise<unknown> = Promise.resolve()
 
-function load(): Promise<Upscaler> {
+let onGpu = false
+
+function makeUpscaler(gpu: boolean, onProgress: ReturnType<typeof makeDownloadProgress>) {
+  return pipeline(
+    'image-to-image',
+    UPSCALE_MODEL,
+    gpu
+      ? { device: 'webgpu', dtype: 'fp32', progress_callback: onProgress }
+      : { device: 'wasm', dtype: 'q8', progress_callback: onProgress },
+  ) as unknown as Promise<Upscaler>
+}
+
+// The device is fixed once a load starts: a later `gpu` is ignored.
+function load(gpu: boolean): Promise<Upscaler> {
   if (!loading) {
     const p = (async () => {
       const onProgress = makeDownloadProgress((progress) => ctx.postMessage({ type: 'progress', progress }))
-      const upscaler = await pipeline('image-to-image', UPSCALE_MODEL, {
-        device: 'wasm',
-        dtype: 'q8',
-        progress_callback: onProgress,
-      })
+      let upscaler: Upscaler
+      if (gpu) {
+        try {
+          upscaler = await makeUpscaler(true, onProgress)
+          onGpu = true
+        } catch {
+          upscaler = await makeUpscaler(false, onProgress)
+        }
+      } else {
+        upscaler = await makeUpscaler(false, onProgress)
+      }
       // Once per success, so a page that saw an earlier load fail hears that a later one worked.
       ctx.postMessage({ type: 'ready' })
-      return upscaler as unknown as Upscaler
+      return upscaler
     })()
     p.catch(() => {
       if (loading === p) loading = null // let a retry try again
@@ -38,12 +57,26 @@ function load(): Promise<Upscaler> {
   return loading
 }
 
+// A GPU that loaded but can't run: drop it and use the WASM model for the rest of the worker's life.
+function fallBackToWasm(): Promise<Upscaler> {
+  onGpu = false
+  const p = makeUpscaler(
+    false,
+    makeDownloadProgress((progress) => ctx.postMessage({ type: 'progress', progress })),
+  )
+  p.catch(() => {
+    if (loading === p) loading = null
+  })
+  loading = p
+  return p
+}
+
 function messageOf(e: unknown) {
   return e instanceof Error ? e.message : String(e)
 }
 
-async function upscale(job: number, image: ImageBitmap, mask: Mask, colors: boolean) {
-  const upscaler = await load()
+async function upscale(job: number, image: ImageBitmap, mask: Mask, colors: boolean, gpu: boolean) {
+  let upscaler = await load(gpu)
   const w = image.width
   const h = image.height
   const W = w * 2
@@ -64,7 +97,15 @@ async function upscale(job: number, image: ImageBitmap, mask: Mask, colors: bool
       const from = ((t.sy + y) * w + t.sx) * 4
       crop.set(src.subarray(from, from + t.sw * 4), y * t.sw * 4)
     }
-    const o = await upscaler(new RawImage(crop, t.sw, t.sh, 4).rgb())
+    const input = new RawImage(crop, t.sw, t.sh, 4).rgb()
+    let o: RawImage
+    try {
+      o = await upscaler(input)
+    } catch (err) {
+      if (!onGpu || done > 0) throw err
+      upscaler = await fallBackToWasm()
+      o = await upscaler(input)
+    }
     // The processor pads the tile to a multiple of 8, so the output can be larger than 2*sw x 2*sh: read its own
     // width and channel count, and copy out only the core (the padded and overlapping edges are dropped).
     const ox = 2 * (t.cx - t.sx)
@@ -108,7 +149,7 @@ ctx.onmessage = (e) => {
   if (m.type === 'load') {
     run(async () => {
       try {
-        await load()
+        await load(m.gpu)
       } catch (err) {
         ctx.postMessage({ type: 'error', message: messageOf(err) })
       }
@@ -116,7 +157,7 @@ ctx.onmessage = (e) => {
   } else if (m.type === 'run') {
     run(async () => {
       try {
-        await upscale(m.job, m.image, m.mask, m.colors)
+        await upscale(m.job, m.image, m.mask, m.colors, m.gpu)
       } catch (err) {
         m.image.close()
         ctx.postMessage({ type: 'error', job: m.job, message: messageOf(err) })

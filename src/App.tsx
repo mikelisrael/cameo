@@ -17,7 +17,6 @@ import { useFileIntake } from './components/DropZone'
 import { AlertIcon, CameraIcon, DropMark, InfoIcon, LockIcon, ResetIcon, Spinner, UploadIcon } from './components/icons'
 import { Queue, type Item } from './components/Queue'
 import { Shortcuts } from './components/Shortcuts'
-import { Toolbar } from './components/Toolbar'
 import { paintBackground } from './lib/background'
 import { applyPatch, applyPick, type MaskPatch } from './lib/maskPatch'
 import {
@@ -58,6 +57,8 @@ import { useTheme } from './lib/useTheme'
 const HowItWorks = lazy(() => import('./components/HowItWorks'))
 // Edit needs the editor and the refine code behind it, which the first screen does not: load them apart.
 const Editor = lazy(() => import('./components/Editor').then((m) => ({ default: m.Editor })))
+// The panel only shows once a cut-out is ready, so it loads apart and is fetched with the editor.
+const Toolbar = lazy(() => import('./components/Toolbar').then((m) => ({ default: m.Toolbar })))
 let editorPrefetched = false
 
 /** A 1x1 transparent GIF, shown until a HEIC photo has been decoded. */
@@ -120,7 +121,10 @@ export default function App() {
     process,
     retryGpu,
     retryLoad,
+    device,
   } = useRemover()
+  // Upscale follows the cut-out's device (Israel delegated, 2026-11-21).
+  const gpu = device === 'webgpu'
   const theme = useTheme()
   const accent = useAccent()
   const how = useHowItWorks()
@@ -337,6 +341,7 @@ export default function App() {
             if (!editorPrefetched) {
               editorPrefetched = true
               void import('./components/Editor')
+              void import('./components/Toolbar')
             }
             // Keep the first look's picture until it has faded out over the sharp one.
             const l = looks.current.get(id)
@@ -949,7 +954,7 @@ export default function App() {
     if (fillingRef.current === id || stepping.current) return
     const src = before.original
     upRef.current
-      .upscale(id, before.original, before.mask, !!before.colors)
+      .upscale(id, before.original, before.mask, !!before.colors, gpu)
       .then(({ image, mask, colors }) => {
         // The photo was removed, or undo or Start over changed it meanwhile: this size is not wanted.
         // A clean-up (or its undo) swaps the bitmap in place, so compare it too.
@@ -960,6 +965,8 @@ export default function App() {
           mask,
           colors,
           raw: undefined,
+          // Clean-ups made before an upscale are taken back by undoing the upscale, not by Reset.
+          pristine: undefined,
           upscaledFrom: { width: before.original.width, height: before.original.height },
         }
         // The mask as it is now, so strokes made while this ran are kept.
@@ -978,7 +985,7 @@ export default function App() {
         )
       })
       .catch(() => {}) // the hook's error state shows it
-  }, [selected, swap, dropStep, photoChanged])
+  }, [selected, swap, dropStep, photoChanged, gpu])
 
   const onStroke = useCallback(
     (p: MaskPatch) => {
@@ -1015,6 +1022,8 @@ export default function App() {
         const next = await applyPhotoPatch(photo, patch, 'after')
         if (entries.current.get(id) !== e || e.result !== r || r.original !== src) return
         // The old bitmap is never closed: an export in flight may still draw it.
+        // Reset edits goes back to the photo as it was before the first clean-up.
+        r.pristine ??= src
         r.original = next
         push(e.history, { kind: 'photo', patch })
         photoChanged(id)
@@ -1072,9 +1081,29 @@ export default function App() {
     [tapPoint, selected, pick, dropStep],
   )
 
+  // A Strength drag is many ticks but one history step: it lands 400 ms after the last tick (Israel delegated, 2026-11-21).
+  const matchRef = useRef(match)
+  matchRef.current = match
+  const matchGesture = useRef<{ id: string; from: Match; to: Match; timer: number } | null>(null)
+  const flushMatch = useCallback(() => {
+    const g = matchGesture.current
+    if (!g) return
+    window.clearTimeout(g.timer)
+    matchGesture.current = null
+    const e = entries.current.get(g.id)
+    if (e?.result && matchKey(g.from) !== matchKey(g.to)) {
+      push(e.history, { kind: 'match', from: g.from, to: g.to }, dropStep)
+      rerender() // the timer changes no state, so the undo button needs a nudge
+    }
+  }, [dropStep])
+
+  // Leaving an image settles a pending drag on the image it was made on.
+  useEffect(() => flushMatch, [selected, flushMatch])
+
   const stepHistory = useCallback(
     async (dir: 'undo' | 'redo') => {
       if (fillingRef.current || stepping.current) return
+      flushMatch()
       const id = selected
       const e = id ? entries.current.get(id) : undefined
       if (!id || !e?.result) return
@@ -1099,6 +1128,8 @@ export default function App() {
       }
       if (step.kind === 'fill') {
         setFill(dir === 'undo' ? step.from : step.to)
+      } else if (step.kind === 'match') {
+        setMatch(dir === 'undo' ? step.from : step.to)
       } else if (step.kind === 'upscale') {
         const s = dir === 'undo' ? step.before : step.after
         swap(id, e, s.result, s.edited)
@@ -1106,13 +1137,43 @@ export default function App() {
       } else if (e.edited) {
         if (step.kind === 'mask')
           applyPatch(e.edited.data, e.edited.width, step.patch, dir === 'undo' ? 'before' : 'after')
-        else if (step.kind === 'reset') e.edited.data.set(dir === 'undo' ? step.before : step.after)
+        else if (step.kind === 'reset') {
+          e.edited.data.set(dir === 'undo' ? step.before : step.after)
+          if (step.photo) {
+            e.result.original = dir === 'undo' ? step.photo.before : step.photo.after
+            photoChanged(id)
+          }
+        }
         setEditVersion((v) => v + 1)
         setEditorVersion((v) => v + 1)
       }
       rerender()
     },
-    [selected, swap, photoChanged],
+    [selected, swap, photoChanged, flushMatch],
+  )
+
+  const changeMatch = useCallback(
+    (next: Match) => {
+      const cur = matchRef.current
+      matchRef.current = next
+      setMatch(next)
+      if (!selected || !entries.current.get(selected)?.result) return
+      if (next.strength !== cur.strength) {
+        const g = matchGesture.current
+        if (g) window.clearTimeout(g.timer)
+        matchGesture.current = {
+          id: selected,
+          from: g ? g.from : cur,
+          to: next,
+          timer: window.setTimeout(flushMatch, 400),
+        }
+      } else if (next.on !== cur.on) {
+        flushMatch()
+        const e = entries.current.get(selected)!
+        push(e.history, { kind: 'match', from: cur, to: next }, dropStep)
+      }
+    },
+    [selected, flushMatch, dropStep],
   )
 
   const changeFill = useCallback(
@@ -1161,14 +1222,23 @@ export default function App() {
 
   const resetEdits = useCallback(() => {
     const e = selected ? entries.current.get(selected) : undefined
-    if (!e?.result || !e.edited || upRef.current.busy === selected) return
+    // Like Undo and Redo, it waits out a running clean-up fill and an upscale.
+    if (!e?.result || !e.edited || fillingRef.current || stepping.current || upRef.current.busy === selected) return
+    const r = e.result
     const before = new Uint8ClampedArray(e.edited.data)
-    const after = new Uint8ClampedArray(e.result.mask.data)
+    const after = new Uint8ClampedArray(r.mask.data)
     e.edited.data.set(after)
-    push(e.history, { kind: 'reset', before, after }, dropStep)
+    // Reset edits also takes back clean-ups (Israel delegated, 2026-11-21). The bitmaps are never closed: history and pristine hold them.
+    let photo: { before: ImageBitmap; after: ImageBitmap } | undefined
+    if (r.pristine && r.original !== r.pristine) {
+      photo = { before: r.original, after: r.pristine }
+      r.original = r.pristine
+      photoChanged(selected!)
+    }
+    push(e.history, { kind: 'reset', before, after, photo }, dropStep)
     setEditVersion((v) => v + 1)
     setEditorVersion((v) => v + 1)
-  }, [selected, dropStep])
+  }, [selected, dropStep, photoChanged])
 
   // Keyboard: undo/redo in both views; tools, brush size, zoom and hold-Space-for-original in Edit.
   const onKey = useRef<(e: KeyboardEvent, down: boolean) => void>(() => {})
@@ -1505,7 +1575,11 @@ export default function App() {
                   canRedo={current.history.undone.length > 0}
                   onUndo={() => stepHistory('undo')}
                   onRedo={() => stepHistory('redo')}
-                  canReset={!!current.edited && isDirty(current.history)}
+                  canReset={
+                    !!current.edited &&
+                    (isDirty(current.history) ||
+                      (!!current.result?.pristine && current.result.original !== current.result.pristine))
+                  }
                   onReset={resetEdits}
                   clean={{
                     status: inpaint.status,
@@ -1597,83 +1671,92 @@ export default function App() {
             </section>
 
             {current?.result ? (
-              <Toolbar
-                fill={fill}
-                blurUrl={blurUrl}
-                imageUrls={imageUrls}
-                lastImage={lastImage}
-                onPickImage={() => imageInput.current?.click()}
-                custom={custom}
-                onFill={changeFill}
-                onCustom={changeCustom}
-                onDownload={save}
-                diagnostics={diagnostics}
-                timings={timings}
-                startupMs={startupMs}
-                draftMs={draftMs}
-                fellBack={fellBack}
-                onRetryGpu={retryGpu}
-                scaled={selectedItem?.scaled}
-                share={shareFiles}
-                format={format}
-                onFormat={setFormat}
-                frame={frame}
-                onFrame={setFrame}
-                passport={
-                  fit && {
-                    size: passportSize,
-                    sheet: passportSheet,
-                    issues: fit.issues,
-                    guides: fit.guides,
-                    sheetCount: fit.sheetCount,
-                    finding: !faces || (!faces.list && !faces.failed),
-                    failed: !!faces?.failed,
+              <Suspense
+                fallback={
+                  <aside className="panel panel--waiting">
+                    <Spinner />
+                  </aside>
+                }
+              >
+                <Toolbar
+                  fill={fill}
+                  blurUrl={blurUrl}
+                  imageUrls={imageUrls}
+                  lastImage={lastImage}
+                  onPickImage={() => imageInput.current?.click()}
+                  custom={custom}
+                  onFill={changeFill}
+                  onCustom={changeCustom}
+                  onDownload={save}
+                  diagnostics={diagnostics}
+                  timings={timings}
+                  startupMs={startupMs}
+                  draftMs={draftMs}
+                  fellBack={fellBack}
+                  onRetryGpu={retryGpu}
+                  scaled={selectedItem?.scaled}
+                  share={shareFiles}
+                  format={format}
+                  onFormat={setFormat}
+                  frame={frame}
+                  onFrame={setFrame}
+                  passport={
+                    fit && {
+                      size: passportSize,
+                      sheet: passportSheet,
+                      issues: fit.issues,
+                      guides: fit.guides,
+                      sheetCount: fit.sheetCount,
+                      finding: !faces || (!faces.list && !faces.failed),
+                      failed: !!faces?.failed,
+                    }
                   }
-                }
-                onPassportSize={setPassportSize}
-                onPassportSheet={setPassportSheet}
-                onPassportRetry={() => setFaceTry((n) => n + 1)}
-                shadow={shadow}
-                onShadow={setShadow}
-                match={match}
-                onMatch={setMatch}
-                preview={framedReady ? framed.url : null}
-                outSize={
-                  frame === 'photo' ? photoSize : framedReady ? { width: framed.width, height: framed.height } : null
-                }
-                webp={webp}
-                doneCount={doneCount}
-                onDownloadAll={saveAll}
-                onSticker={saveSticker}
-                zipping={zipping}
-                onShortcuts={() => setShortcutsOpen(true)}
-                upscale={
-                  selected
-                    ? {
-                        offer: canUpscale(current.result),
-                        from: { width: current.result.original.width, height: current.result.original.height },
-                        to: { width: current.result.original.width * 2, height: current.result.original.height * 2 },
-                        state: up.busy === selected ? up.state : 'idle',
-                        progress: up.progress,
-                        tiles: up.busy === selected ? up.tiles : null,
-                        elsewhere: !!up.busy && up.busy !== selected,
-                        cleaning: filling === selected,
-                        failed: up.state === 'error' || up.failedFor === selected,
-                        upscaledFrom: current.result.upscaledFrom ?? null,
-                        canUndo: (() => {
-                          const last = current.history.done.at(-1)
-                          return last?.kind === 'upscale' && last.after.result === current.result
-                        })(),
-                      }
-                    : null
-                }
-                onUpscale={startUpscale}
-                onUpscaleRetry={() => {
-                  up.retry()
-                  startUpscale()
-                }}
-                onUpscaleUndo={() => stepHistory('undo')}
-              />
+                  onPassportSize={setPassportSize}
+                  onPassportSheet={setPassportSheet}
+                  onPassportRetry={() => setFaceTry((n) => n + 1)}
+                  shadow={shadow}
+                  onShadow={setShadow}
+                  match={match}
+                  onMatch={changeMatch}
+                  preview={framedReady ? framed.url : null}
+                  outSize={
+                    frame === 'photo' ? photoSize : framedReady ? { width: framed.width, height: framed.height } : null
+                  }
+                  webp={webp}
+                  doneCount={doneCount}
+                  onDownloadAll={saveAll}
+                  onSticker={saveSticker}
+                  zipping={zipping}
+                  onShortcuts={() => setShortcutsOpen(true)}
+                  upscale={
+                    selected
+                      ? {
+                          offer: canUpscale(current.result),
+                          gpu,
+                          from: { width: current.result.original.width, height: current.result.original.height },
+                          to: { width: current.result.original.width * 2, height: current.result.original.height * 2 },
+                          state: up.busy === selected ? up.state : 'idle',
+                          progress: up.progress,
+                          tiles: up.busy === selected ? up.tiles : null,
+                          elsewhere: !!up.busy && up.busy !== selected,
+                          cleaning: filling === selected,
+                          failed: up.state === 'error' || up.failedFor === selected,
+                          upscaledFrom: current.result.upscaledFrom ?? null,
+                          canUndo: (() => {
+                            const last = current.history.done.at(-1)
+                            return last?.kind === 'upscale' && last.after.result === current.result
+                          })(),
+                        }
+                      : null
+                  }
+                  onUpscale={startUpscale}
+                  onUpscaleRetry={() => {
+                    up.retry()
+                    startUpscale()
+                  }}
+                  onUpscaleUndo={() => stepHistory('undo')}
+                />
+              </Suspense>
             ) : (
               <aside className="panel panel--waiting">
                 <p className="panel__hint">Background colours and the download appear here once a cut-out is ready.</p>

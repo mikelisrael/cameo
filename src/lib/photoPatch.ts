@@ -150,7 +150,9 @@ export function cropForFill(
   const grown = dilate(atCrop, w, h, 2)
   let a = new Float32Array(w * h)
   for (let i = 0; i < a.length; i++) a[i] = grown[i] ? 255 : 0
-  a = boxBlur(boxBlur(a, w, h, 4), w, h, 4)
+  // The softening grows with the crop: a fixed 4 px left a visible seam on big photos (Israel delegated, 2026-11-21).
+  const soft = Math.min(16, Math.max(4, Math.round(Math.max(w, h) / 96)))
+  a = boxBlur(boxBlur(a, w, h, soft), w, h, soft)
   const feather = new Uint8ClampedArray(w * h)
   for (let i = 0; i < a.length; i++) feather[i] = grown[i] ? 255 : a[i]
   return { x, y, w, h, image, hole: modelHole, mw, mh, scale, feather }

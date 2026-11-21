@@ -1,3 +1,4 @@
+import type { Match } from './compose'
 import type { MaskPatch } from './maskPatch'
 import type { PhotoPatch } from './photoPatch'
 import type { Mask } from './protocol'
@@ -10,8 +11,15 @@ export type Step =
   | { kind: 'mask'; patch: MaskPatch }
   | { kind: 'fill'; from: string | null; to: string | null }
   | { kind: 'photo'; patch: PhotoPatch }
-  | { kind: 'reset'; before: Uint8ClampedArray; after: Uint8ClampedArray }
+  | {
+      kind: 'reset'
+      before: Uint8ClampedArray
+      after: Uint8ClampedArray
+      /** Set when Reset also took back clean-ups: the photo before and after. Never closed (pristine holds them). */
+      photo?: { before: ImageBitmap; after: ImageBitmap }
+    }
   | { kind: 'upscale'; before: Snap; after: Snap }
+  | { kind: 'match'; from: Match; to: Match }
 
 /** `bytes` counts every step held (done and undone); `trimmed` is set once an old step was dropped for the cap. */
 export type History = { done: Step[]; undone: Step[]; bytes: number; trimmed?: boolean }
@@ -33,7 +41,11 @@ const weight = (s: Step) =>
     : s.kind === 'photo'
       ? s.patch.before.byteLength + s.patch.after.byteLength
       : s.kind === 'reset'
-        ? s.before.byteLength + s.after.byteLength
+        ? s.before.byteLength +
+          s.after.byteLength +
+          (s.photo
+            ? (s.photo.before.width * s.photo.before.height + s.photo.after.width * s.photo.after.height) * 4
+            : 0)
         : s.kind === 'upscale'
           ? snapWeight(s.before) + snapWeight(s.after)
           : 0
