@@ -1,0 +1,53 @@
+name: Bug report
+description: Something in Cameo did not work as you expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Cameo never sees your photos, so please describe what you saw. Only attach an image you are happy to make public.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: Safari 18, Chrome 130
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and OS
+      placeholder: iPhone 15, iOS 18
+    validations:
+      required: true
+  - type: textarea
+    id: about-device
+    attributes:
+      label: About this device
+      description: Paste what the About this device popover shows.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it go wrong?
+      options:
+        - Cut-out
+        - Editing
+        - Backgrounds and shadows
+        - Saving and sharing
+        - Something else
