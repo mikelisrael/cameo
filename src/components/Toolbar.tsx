@@ -11,7 +11,7 @@ import {
 } from '../lib/background'
 import type { Format, Frame, Match, PassportIssue, PassportSize, Shadow } from '../lib/compose'
 import type { Diagnostics, Timings } from '../lib/protocol'
-import { UPSCALE_MB } from '../lib/upscale'
+import { upscaleMb } from '../lib/upscale'
 import type { Item } from './Queue'
 import { CheckIcon, ChevronDownIcon, PlusIcon, DownloadIcon, InfoIcon, LockIcon, ShareIcon, Spinner } from './icons'
 import { Segmented } from './Segmented'
@@ -143,6 +143,8 @@ type Props = {
   /** The 2x upscale offer for the selected photo; null when none is selected. */
   upscale: {
     offer: boolean
+    /** The cut-out runs on WebGPU, so the upscaler does too (its download is a different size). */
+    gpu: boolean
     from: { width: number; height: number }
     to: { width: number; height: number }
     state: 'idle' | 'downloading' | 'running' | 'error'
@@ -228,7 +230,7 @@ function UpscaleBlock({
                     </span>{' '}
                     px ·{' '}
                     <span className="nowrap">
-                      one-time <span className="mono">{UPSCALE_MB}</span> MB download
+                      one-time <span className="mono">{upscaleMb(u.gpu)}</span> MB download
                     </span>
                   </p>
                 </>
@@ -623,9 +625,7 @@ export function Toolbar({
                 onChange={(e) => onMatch({ ...match, on: e.target.checked })}
               />
               <span className="switch__track" aria-hidden="true" />
-              <span>
-                Match the background <span className="switch__note">(experimental)</span>
-              </span>
+              <span>Match the background</span>
             </label>
             {fill === null && (
               <p className="panel__notice" id="match-why">

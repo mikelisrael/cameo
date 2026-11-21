@@ -1,8 +1,10 @@
 import type { Mask } from './protocol'
 
 export const UPSCALE_MODEL = 'Xenova/swin2SR-lightweight-x2-64'
-/** The q8 model is 7.1 MB; shown to people before the first download. */
-export const UPSCALE_MB = 7
+/** Upscale follows the cut-out's device (Israel delegated, 2026-11-21). The fp32 model (WebGPU) is 8.1 MB, the q8 one (WASM) 7.1 MB; shown before the first download. */
+export function upscaleMb(gpu: boolean): number {
+  return gpu ? 8 : 7
+}
 export const UPSCALE_MAX_SIDE = 800
 
 /** Upscaling needs the mask at the photo's size and a photo small enough to finish in a sensible time. */

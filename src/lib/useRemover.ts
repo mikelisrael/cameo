@@ -13,6 +13,8 @@ export type Result = {
   url: string
   /** The photo's size before it was upscaled; set once it has been. */
   upscaledFrom?: { width: number; height: number }
+  /** The photo as this result was made, before any clean-up: what Reset edits goes back to. Empty until the first clean-up. */
+  pristine?: ImageBitmap
 }
 
 export type ProcessOpts = { options?: RefineOptions; compare?: boolean }

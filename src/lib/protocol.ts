@@ -99,7 +99,10 @@ export type SegOut =
   | { type: 'error'; id?: string; req?: number; message: string }
 
 /** 2x upscaling: Swin2SR in a lazy worker. */
-export type UpIn = { type: 'load' } | { type: 'run'; job: number; image: ImageBitmap; mask: Mask; colors: boolean } // colors: also recompute edge colours
+// gpu: run on WebGPU when the cut-out model does; the first message to reach the worker decides, later ones are ignored
+export type UpIn =
+  | { type: 'load'; gpu: boolean }
+  | { type: 'run'; job: number; image: ImageBitmap; mask: Mask; colors: boolean; gpu: boolean } // colors: also recompute edge colours
 export type UpOut =
   | { type: 'progress'; progress: number } // 0..100, the model download
   | { type: 'ready' }
