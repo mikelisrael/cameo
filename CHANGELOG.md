@@ -4,6 +4,10 @@ All notable changes to Cameo are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Changed
+
+- A faster start to each cut-out: on a graphics card the sharp model no longer waits for the first look, and the first look is ready sooner on a session's first photo ([#48](https://github.com/mikelisrael/cameo/pull/48)).
+
 ## [0.1.0] - 2026-11-21
 
 The first public version.
