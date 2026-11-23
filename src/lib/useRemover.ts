@@ -51,8 +51,9 @@ async function postCopy(worker: Worker, id: string, bitmap: ImageBitmap, opts?: 
 /** The first-look model's input size: the photo is shrunk to this before it reaches that worker. */
 const DRAFT_SIZE = 320
 
-/** With the sharp model already running, it waits this long (at most) for the first look, so the two don't
- * fight over the processor: on a busy CPU the small model would take several times longer. A queued photo's
+/** With the sharp model already running on the processor (WASM), it waits this long (at most) for the first look,
+ * so the two don't fight over the processor: on a busy CPU the small model would take several times longer. On the
+ * graphics card the sharp model isn't on the CPU, so it starts at once (since 22 November 2026). A queued photo's
  * first look is made early, beside the current photo's sharp run, so at its turn this wait is normally over. */
 const DRAFT_HEAD_START_MS = 2500
 
@@ -87,6 +88,7 @@ export function useRemover() {
   const pending = useRef(new Map<string, Pending>())
   const active = useRef(0)
   const loaded = useRef(false)
+  const deviceRef = useRef<'webgpu' | 'wasm' | null>(null) // which device the loaded model runs on; `run` reads it as it posts
   const failed = useRef(false) // the model couldn't load: photos wait here until Try again
   const lastLoad = useRef<{ forceWasm: boolean; reason?: 'gpu-failed' | 'remembered' }>({ forceWasm: false })
   const [retrying, setRetrying] = useState<{ attempt: number; of: number } | null>(null)
@@ -106,7 +108,10 @@ export function useRemover() {
   const draftWaiting = useRef(new Map<string, { done: (mask: Mask) => void; settle: () => void }>())
   const [draftMs, setDraftMs] = useState<number | null>(null)
 
-  /** The first-look worker, started on first use. Every failure here is silent: the sharp cut-out still comes. */
+  /**
+   * The first-look worker: started when the page opens (see the mount effect), created here on demand if that hasn't
+   * happened or after a failure. Every failure here is silent: the sharp cut-out still comes.
+   */
   const getDraftWorker = useCallback(() => {
     if (draftWorker.current) return draftWorker.current
     if (draftBroken.current) return null
@@ -172,6 +177,7 @@ export function useRemover() {
     workerRef.current = worker
     const map = pending.current
     loaded.current = false
+    deviceRef.current = null
     failed.current = false
     lastLoad.current = { forceWasm, reason }
     setProgress(0)
@@ -189,6 +195,7 @@ export function useRemover() {
         setRetrying({ attempt: m.attempt, of: m.of })
       } else if (m.type === 'ready') {
         loaded.current = true
+        deviceRef.current = m.device
         setRetrying(null)
         setDevice(m.device)
         setDiagnostics(m.diagnostics)
@@ -250,6 +257,8 @@ export function useRemover() {
     const map = pending.current
     const remembered = readForceWasm()
     spawn(remembered, remembered ? 'remembered' : undefined)
+    // The first look is part of the cut-out, so its worker and model start with the page (Israel, 22 November 2026).
+    getDraftWorker()?.postMessage({ type: 'warm' } satisfies DraftIn)
     return () => {
       workerRef.current?.terminate()
       workerRef.current = null
@@ -258,7 +267,7 @@ export function useRemover() {
       draftWorker.current = null
       draftWaiting.current.clear()
     }
-  }, [spawn])
+  }, [spawn, getDraftWorker])
 
   /** Forget that the GPU failed and start over on it. */
   const retryGpu = useCallback(() => {
@@ -337,13 +346,14 @@ export function useRemover() {
           if (!worker) return reject(new Error('Worker not available'))
           // The rough mask comes back long before the sharp one, even while the big model is still downloading.
           let headStart: Promise<void> | undefined
+          const hold = loaded.current && deviceRef.current === 'wasm'
           if (onDraft && job.draft) {
             // Made early, while the previous photo was in the sharp model: show it now, don't post another.
             const early = job.draft
             void early.then((mask) => {
               if (mask && pending.current.has(id)) onDraft(mask)
             })
-            if (loaded.current) {
+            if (hold) {
               headStart = new Promise<void>((resolve) => {
                 const timer = setTimeout(resolve, DRAFT_HEAD_START_MS)
                 void early.then(() => {
@@ -364,7 +374,7 @@ export function useRemover() {
               })
             })
             void postDraft(id, decoded.bitmap)
-            if (loaded.current) headStart = first
+            if (hold) headStart = first
           }
           void (headStart ?? Promise.resolve())
             .then(() => {

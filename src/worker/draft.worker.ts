@@ -68,6 +68,10 @@ async function draft(image: ImageBitmap) {
 
 ctx.onmessage = (e) => {
   const m = e.data
+  if (m.type === 'warm') {
+    void load().catch(() => {}) // a failure clears `loading`, so a later draft retries
+    return
+  }
   if (m.type !== 'draft') return
   queue = queue.then(async () => {
     try {
