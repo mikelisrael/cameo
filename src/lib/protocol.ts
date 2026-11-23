@@ -64,7 +64,7 @@ export const DEFAULT_REFINE: RefineOptions = {
 }
 
 /** The first look: a small model gives a rough mask from a 320 px copy of the photo while the sharp one runs. */
-export type DraftIn = { type: 'draft'; id: string; image: ImageBitmap }
+export type DraftIn = { type: 'draft'; id: string; image: ImageBitmap } | { type: 'warm' } // load the model now; no reply
 export type DraftOut =
   | { type: 'draft'; id: string; mask: Mask; ms: number } // mask is 320x320, 0..255
   | { type: 'error'; id?: string; message: string }
